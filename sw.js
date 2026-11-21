@@ -1,6 +1,6 @@
 /* Service Worker: يجعل التطبيق يعمل بدون إنترنت بعد أول فتح.
  * عند تعديل أي ملف في التطبيق: غيّر رقم VERSION ليحصل الأطفال على النسخة الجديدة. */
-const VERSION = 'robo-v2';
+const VERSION = 'robo-v3';
 const SHELL = [
   './',
   './index.html',
@@ -15,7 +15,10 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache:'reload' يتجاوز كاش المتصفح حتى لا نخزّن خليطاً من ملفات قديمة وجديدة
+  e.waitUntil(caches.open(VERSION)
+    .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -45,11 +48,22 @@ self.addEventListener('fetch', (e) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // ملفات التطبيق: الكاش أولاً، ثم الشبكة
-  e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((cached) => cached || fetch(req).then((res) => {
-      if (res.ok) caches.open(VERSION).then((c) => c.put(req, res.clone()));
+  // ملفات التطبيق: الشبكة أولاً (ليحصل الأطفال دائماً على آخر نسخة متطابقة)،
+  // وإن لم يوجد إنترنت أو تأخر الرد أكثر من 4 ثوانٍ نستخدم الكاش.
+  e.respondWith((async () => {
+    const cache = await caches.open(VERSION);
+    const network = fetch(req, { cache: 'no-cache' }).then((res) => {
+      if (res.ok) cache.put(req, res.clone());
       return res;
-    }).catch(() => (req.mode === 'navigate' ? caches.match('./index.html') : undefined)))
-  );
+    });
+    const timeout = new Promise((resolve) => setTimeout(resolve, 4000));
+    try {
+      const res = await Promise.race([network, timeout]);
+      if (res) return res;
+    } catch (err) { /* offline */ }
+    const cached = await cache.match(req, { ignoreSearch: true })
+      || (req.mode === 'navigate' ? await cache.match('./index.html') : undefined);
+    if (cached) return cached;
+    return network; // لا يوجد في الكاش: ننتظر الشبكة
+  })());
 });
