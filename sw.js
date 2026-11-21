@@ -1,6 +1,6 @@
 /* Service Worker: يجعل التطبيق يعمل بدون إنترنت بعد أول فتح.
  * عند تعديل أي ملف في التطبيق: غيّر رقم VERSION ليحصل الأطفال على النسخة الجديدة. */
-const VERSION = 'robo-v6';
+const VERSION = 'robo-v7';
 const SHELL = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './audio/welcome.m4a',
 ];
 
 self.addEventListener('install', (e) => {
@@ -32,6 +33,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  // طلبات الصوت الجزئية (Range) نتركها للمتصفح؛ الكاش لا يقبل ردود 206
+  if (req.headers.has('range')) return;
   const url = new URL(req.url);
 
   // الخطوط من Google: من الكاش أولاً ثم التحديث في الخلفية
