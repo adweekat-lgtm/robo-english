@@ -868,7 +868,7 @@
         const btn = e.target.closest('[data-act]');
         const r = await micAttempt(btn, resultEl, (texts) => heardWord(texts, w));
         if (r === 'unsupported') {
-          await say(`Say: ${w.en}!`, `قل: ${w.en}`, { arabic: false });
+          await say(`Say: ${w.en.replace(/[.!?]+$/, "")}!`, `قل: ${w.en}`, { arabic: false });
           await wait(2200);
           awardWord();
           return;
@@ -892,7 +892,7 @@
       confetti(40);
       robotMood('happy', 1000);
       if (!p.spoken.includes(w.id)) { p.spoken.push(w.id); saveProgress(); }
-      say(`${en} ${w.en}!`, ar, { arabic: false });
+      say(`${en} ${w.en.replace(/[.!?]+$/, "")}!`, ar, { arabic: false });
       checkLevelComplete(L);
     }
   }
