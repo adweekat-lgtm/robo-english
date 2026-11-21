@@ -319,3 +319,7 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: 0; backg
 .voice-help { text-align: start; margin: 12px 0; padding: 10px 14px; background: #FFF6D6; border-radius: 16px; font-size: 17px; line-height: 1.6; }
 .voice-help summary { font-weight: 800; cursor: pointer; }
 .voice-help ol { margin: 8px 0 0; padding-inline-start: 22px; }
+
+/* جمل طويلة (المستويات 9 و 10) */
+.pcard .word.long { font-size: 16px; line-height: 1.25; padding: 0 8px; text-align: center; }
+.sheet .big-word.long { font-size: 32px; line-height: 1.25; }
