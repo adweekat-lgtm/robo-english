@@ -307,3 +307,15 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: 0; backg
 }
 .avatar-choice.on { border-color: var(--green); background: #E9FBEF; transform: scale(1.06); }
 @media (min-width: 560px) { .profiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .avatars { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+
+/* اختيار الصوت */
+.voice-row { flex-direction: column; align-items: stretch; }
+.voice-ctl { display: flex; gap: 10px; align-items: center; }
+.voice-select {
+  flex: 1; min-width: 0; font: inherit; font-size: 17px; padding: 10px 12px; border-radius: 16px;
+  border: 3px solid #E3DEFF; background: var(--card); color: var(--ink);
+}
+.voice-test { min-height: 52px; padding: 6px 16px; font-size: 22px; flex: none; }
+.voice-help { text-align: start; margin: 12px 0; padding: 10px 14px; background: #FFF6D6; border-radius: 16px; font-size: 17px; line-height: 1.6; }
+.voice-help summary { font-weight: 800; cursor: pointer; }
+.voice-help ol { margin: 8px 0 0; padding-inline-start: 22px; }
