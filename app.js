@@ -30,24 +30,61 @@
   /* =====================================================================
    * التقدم (يُحفظ في جهاز الطفل فقط)
    * ===================================================================== */
-  const STORAGE_KEY = 'robo-english-progress-v1';
-  const defaults = () => ({ levels: {}, settings: { arabicVoice: true, slow: true }, childName: '', celebrated: [] });
-  let progress = loadProgress();
+  // كل طفل له ملف (اسم + صورة + نجومه). الإعدادات مشتركة على مستوى الجهاز.
+  const STORAGE_KEY = 'robo-english-v2';
+  const OLD_KEY = 'robo-english-progress-v1'; // نسخة ما قبل الملفات — تُنقل تلقائياً
+  const AVATARS = ['🦁', '🐼', '🦊', '🐯', '🐸', '🐵', '🦄', '🐨', '🐰', '🐻', '🐙', '🦖'];
+  const COLORS = ['#FF6B6B', '#FF9F43', '#1DD1A1', '#48DBFB', '#7C5CFF', '#F368E0'];
+  const MAX_PROFILES = 6;
+  const defaultSettings = () => ({ arabicVoice: true, slow: true });
+  const newProfile = (name, avatar, color) => ({
+    id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    name, avatar, color: color || COLORS[0], nameEn: '', levels: {}, celebrated: [],
+  });
+  let store = loadStore();
+  let progress = currentProfile(); // ملف الطفل الحالي (أو null قبل الاختيار)
 
-  function loadProgress() {
+  function loadStore() {
     try {
-      const p = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (p && typeof p === 'object' && p.levels) {
-        const d = defaults();
-        return { ...d, ...p, settings: { ...d.settings, ...p.settings } };
-      }
+      const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (s && Array.isArray(s.profiles)) return { ...s, settings: { ...defaultSettings(), ...s.settings } };
     } catch (e) { /* storage unavailable */ }
-    return defaults();
+    const st = { profiles: [], currentId: null, settings: defaultSettings() };
+    try {
+      const old = JSON.parse(localStorage.getItem(OLD_KEY));
+      if (old && old.levels) {
+        st.settings = { ...st.settings, ...old.settings };
+        if (Object.keys(old.levels).length || old.childName) {
+          const p = newProfile(old.childName || 'بطلي', '🦁');
+          p.levels = old.levels;
+          p.nameEn = old.childName || '';
+          p.celebrated = old.celebrated || [];
+          st.profiles.push(p);
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return st;
+  }
+  function currentProfile() { return store.profiles.find((p) => p.id === store.currentId) || null; }
+  function selectProfile(id) {
+    store.currentId = id;
+    progress = currentProfile();
+    saveProgress();
   }
   function saveProgress() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(progress)); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); } catch (e) { /* ignore */ }
     updateStarCount();
   }
+  /** يشغّل fn وكأن الملف p هو الحالي (لحساب نجوم كل طفل في شاشة الاختيار) */
+  function withProfile(p, fn) {
+    const saved = progress;
+    progress = p;
+    try { return fn(); } finally { progress = saved; }
+  }
+  const isLatin = (str) => /^[A-Za-z][A-Za-z' -]*$/.test(String(str || '').trim());
+  /** الاسم الذي يستطيع الصوت الإنجليزي نطقه (من الميكروفون أو إن كُتب بحروف إنجليزية) */
+  const spokenName = () => (progress ? (progress.nameEn || (isLatin(progress.name) ? progress.name.trim() : '')) : '');
+
   function lp(id) {
     if (!progress.levels[id]) progress.levels[id] = { heard: [], spoken: [], gameBest: 0, chat: false };
     return progress.levels[id];
@@ -75,7 +112,15 @@
   function totalStars() {
     return LEVELS.reduce((sum, L) => sum + (L.ready ? levelStars(L) + lp(L.id).spoken.length : 0), 0);
   }
-  function updateStarCount() { $('#starCount').textContent = totalStars(); }
+  function updateStarCount() {
+    $('#starCount').textContent = progress ? totalStars() : 0;
+    const pb = $('#profileBtn');
+    if (pb) {
+      pb.textContent = progress ? progress.avatar : '👤';
+      pb.style.background = progress ? progress.color : '';
+      pb.setAttribute('aria-label', progress ? `الطفل: ${progress.name} — اضغط للتبديل` : 'اختر الطفل');
+    }
+  }
 
   /* =====================================================================
    * الأصوات: نطق (Text-to-Speech) + أصوات مكافأة صغيرة
@@ -120,7 +165,7 @@
       u.lang = lang;
       const v = pickVoice(lang);
       if (v) u.voice = v;
-      u.rate = opts.rate || (lang.startsWith('en') ? (progress.settings.slow ? 0.72 : 0.92) : 1);
+      u.rate = opts.rate || (lang.startsWith('en') ? (store.settings.slow ? 0.72 : 0.92) : 1);
       u.pitch = pitch;
       let finished = false;
       const finish = () => {
@@ -153,7 +198,7 @@
     const my = ++saySeq;
     await speak(en, opts);
     if (my !== saySeq) return false;
-    if (ar && opts.arabic !== false && progress.settings.arabicVoice && hasArabicVoice()) {
+    if (ar && opts.arabic !== false && store.settings.arabicVoice && hasArabicVoice()) {
       await wait(150);
       if (my !== saySeq) return false;
       await speak(ar, { lang: 'ar-SA', pitch: 1.1 });
@@ -361,9 +406,12 @@
   function parentOf(hash) {
     const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
     if (parts[0] === 'level' && parts.length > 2) return `#/level/${parts[1]}`;
+    if (parts[0] === 'profiles' && parts.length > 1) return '#/profiles';
+    if (parts[0] === 'profiles' && !progress) return '#/profiles';
     return '#/home';
   }
   $('#backBtn').addEventListener('click', () => { sfx.tap(); go(parentOf(location.hash)); });
+  $('#profileBtn').addEventListener('click', () => { sfx.tap(); go('#/profiles'); });
   window.addEventListener('hashchange', route);
 
   function setScreen(title, isHome = false) {
@@ -380,6 +428,12 @@
     if (screenCleanup) { screenCleanup(); screenCleanup = null; }
     if (!started) { renderSplash(); return; }
     const [p0, p1, p2] = location.hash.replace(/^#\/?/, '').split('/');
+    if (p0 === 'profiles' && p1 === 'new') return renderProfileForm(null);
+    if (p0 === 'profiles' && p1 === 'edit' && p2) {
+      const prof = store.profiles.find((x) => x.id === p2);
+      return prof ? renderProfileForm(prof) : go('#/profiles');
+    }
+    if (p0 === 'profiles' || !progress) return renderProfiles();
     if (p0 === 'level' && p1) {
       const L = getLevel(Number(p1));
       if (!L || !isUnlocked(L)) { go('#/home'); return; }
@@ -408,10 +462,108 @@
       sfx.good();
       // أول نطق يجب أن يكون بعد لمسة من المستخدم (شرط في iOS)
       if (synth) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); }
-      greetOnHome = true;
-      if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/home'; // hashchange ⇒ route()
-      else route();
+      // كل مرة يُفتح التطبيق: يختار الطفل ملفه أولاً
+      go(store.profiles.length ? '#/profiles' : '#/profiles/new');
     });
+  }
+
+  /* ---------- ملفات الأطفال: من سيلعب؟ ---------- */
+  let editMode = false;
+  function renderProfiles() {
+    if (!store.profiles.length) { go('#/profiles/new'); return; }
+    setScreen('من سيلعب؟ 👫', !progress);
+    const tiles = store.profiles.map((p) => {
+      const stars = withProfile(p, totalStars);
+      return `
+        <button class="profile-tile ${p.id === store.currentId ? 'current' : ''}" style="--c:${p.color}" data-id="${p.id}" type="button">
+          ${editMode ? '<span class="edit-badge">✏️</span>' : ''}
+          <span class="p-avatar">${p.avatar}</span>
+          <span class="p-name" dir="auto">${esc(p.name)}</span>
+          <span class="p-stars">⭐ ${stars}</span>
+        </button>`;
+    }).join('');
+    const canAdd = store.profiles.length < MAX_PROFILES;
+    main.innerHTML = `
+      <div class="screen">
+        <div class="section-title">${editMode ? '✏️ اضغط على الطفل لتعديل اسمه أو صورته' : 'اضغط على صورتك 👇'}</div>
+        <div class="profiles">
+          ${tiles}
+          ${canAdd ? '<button class="profile-tile add" id="addProfile" type="button"><span class="p-avatar">➕</span><span class="p-name">طفل جديد</span></button>' : ''}
+        </div>
+        <div class="home-actions">
+          <button class="btn white" id="editToggle" type="button">${editMode ? '✅ تم' : '✏️ تعديل الملفات'}</button>
+        </div>
+      </div>`;
+    main.querySelectorAll('.profile-tile[data-id]').forEach((t) => t.addEventListener('click', () => {
+      sfx.tap();
+      if (editMode) { go(`#/profiles/edit/${t.dataset.id}`); return; }
+      selectProfile(t.dataset.id);
+      greetOnHome = true;
+      go('#/home');
+    }));
+    const add = $('#addProfile');
+    if (add) add.addEventListener('click', () => { sfx.tap(); editMode = false; go('#/profiles/new'); });
+    $('#editToggle').addEventListener('click', () => { sfx.tap(); editMode = !editMode; renderProfiles(); });
+    robotMood('wave', 1500);
+    say('Who is playing today?', 'مين بيلعب اليوم؟ اضغط على صورتك!');
+  }
+
+  function renderProfileForm(prof) {
+    const isNew = !prof;
+    editMode = false;
+    setScreen(isNew ? 'طفل جديد ✨' : 'تعديل الملف ✏️', isNew && !store.profiles.length);
+    const used = new Set(store.profiles.filter((p) => p !== prof).map((p) => p.avatar));
+    let avatar = prof ? prof.avatar : (AVATARS.find((a) => !used.has(a)) || AVATARS[0]);
+    main.innerHTML = `
+      <div class="screen">
+        <label class="field-label" for="nameInput">✍️ اكتب اسم الطفل</label>
+        <input id="nameInput" class="name-input" type="text" maxlength="20" autocomplete="off" dir="auto"
+          placeholder="مثلاً: سارة" value="${prof ? esc(prof.name) : ''}">
+        <div class="hint">💡 إذا كتبته بالإنجليزي (Sara) سيناديه روبو باسمه بصوته.</div>
+        <div class="field-label">🖼️ اختر صورتك</div>
+        <div class="avatars">
+          ${AVATARS.map((a) => `<button class="avatar-choice ${a === avatar ? 'on' : ''}" data-a="${a}" type="button" aria-label="${a}">${a}</button>`).join('')}
+        </div>
+        <button class="btn green block" id="saveProfile" type="button">${isNew ? '✅ هيا نبدأ!' : '💾 حفظ'}</button>
+        ${isNew ? '' : '<div style="margin-top:14px"><button class="btn white block" id="deleteProfile" type="button">🗑️ حذف هذا الملف</button></div>'}
+      </div>`;
+    const input = $('#nameInput');
+    main.querySelectorAll('.avatar-choice').forEach((b) => b.addEventListener('click', () => {
+      sfx.tap();
+      avatar = b.dataset.a;
+      main.querySelectorAll('.avatar-choice').forEach((x) => x.classList.toggle('on', x === b));
+    }));
+    $('#saveProfile').addEventListener('click', () => {
+      const name = input.value.replace(/\s+/g, ' ').trim();
+      if (!name) { sfx.bad(); toast('اكتب الاسم أولاً ✍️'); input.focus(); return; }
+      if (isNew) {
+        const color = COLORS[store.profiles.length % COLORS.length];
+        const p = newProfile(name, avatar, color);
+        store.profiles.push(p);
+        selectProfile(p.id);
+        sfx.good();
+        confetti(40);
+        greetOnHome = true;
+        go('#/home');
+      } else {
+        if (prof.name !== name) prof.nameEn = ''; // اسم جديد ⇒ ننسى ما التُقط بالصوت
+        prof.name = name;
+        prof.avatar = avatar;
+        saveProgress();
+        sfx.good();
+        go('#/profiles');
+      }
+    });
+    const del = $('#deleteProfile');
+    if (del) del.addEventListener('click', () => {
+      if (!confirm(`حذف ملف ${prof.name} وكل نجومه؟ لا يمكن التراجع.`)) return;
+      store.profiles = store.profiles.filter((p) => p !== prof);
+      if (store.currentId === prof.id) { store.currentId = null; progress = null; }
+      saveProgress();
+      go('#/profiles');
+    });
+    if (isNew) say('Hello! What is your name?', 'أهلاً! اكتب اسمك واختر صورتك.');
+    else setBubble('Change your name or picture.', 'غيّر الاسم أو الصورة ثم اضغط حفظ.');
   }
 
   let greetOnHome = true;
@@ -436,6 +588,7 @@
         <div class="section-title">اختر مستوى 🗺️</div>
         <div class="levels">${tiles}</div>
         <div class="home-actions">
+          <button class="btn white" id="switchBtn" type="button">${progress.avatar} تغيير الطفل</button>
           <button class="btn white" id="settingsBtn" type="button">⚙️ الإعدادات</button>
           <button class="btn white" id="installBtn" type="button" ${canShowInstall() ? '' : 'hidden'}>📲 ثبّت التطبيق</button>
         </div>
@@ -449,13 +602,14 @@
       else say('Finish the level before!', 'أكمل المستوى السابق واجمع ٣ نجوم لتفتح هذا المستوى.');
     }));
     $('#settingsBtn').addEventListener('click', openSettings);
+    $('#switchBtn').addEventListener('click', () => { sfx.tap(); go('#/profiles'); });
     $('#installBtn').addEventListener('click', doInstall);
 
     if (greetOnHome) {
       greetOnHome = false;
       robotMood('wave', 1600);
-      const name = progress.childName ? `, ${progress.childName}` : '';
-      say(`Hi${name}! I am Robo. Let's learn English!`, 'مرحباً! أنا روبو. هيا نتعلم الإنجليزية! اختر مستوى لنبدأ.');
+      const n = spokenName();
+      say(`Hi${n ? `, ${n}` : ''}! Let's learn English!`, `مرحباً يا ${progress.name}! هيا نتعلم الإنجليزية. اختر مستوى لنبدأ.`);
     } else {
       setBubble('Choose a level!', 'اختر مستوى لنبدأ 👇');
     }
@@ -726,6 +880,11 @@
     };
 
     const resolveStep = (step) => {
+      if (step.type === 'name') {
+        // إن كان اسم الطفل معروفاً بالإنجليزي نضعه في زر الجواب
+        const n = spokenName();
+        return n ? { ...step, replies: [{ ...step.replies[0], en: `My name is ${n}.`, ar: `اسمي ${progress.name}.` }] } : step;
+      }
       if (step.type !== 'picture') return step;
       const w = L.words.find((x) => x.id === step.word);
       const wrong = pick(L.words.filter((x) => x !== w));
@@ -800,7 +959,7 @@
       let shown = reply.en;
       if (step.type === 'name' && name) {
         shown = `My name is ${name}.`;
-        progress.childName = name;
+        progress.nameEn = name;
         saveProgress();
       }
       addMsg('kid', shown, bySpeech ? '🎤 قلتها بصوتك! ⭐' : reply.ar);
@@ -820,7 +979,7 @@
           after = { en: `Good try! It is ${w.phrase}. Say: ${w.en}!`, ar: `محاولة جيدة! هذه صورة ${w.ar}، وبالإنجليزي: ${w.en}` };
         }
       } else if (step.after) {
-        const n = name || (step.type === 'name' ? '' : progress.childName);
+        const n = name || spokenName();
         after = { en: step.after.replace('{name}', n ? `, ${n}` : ''), ar: step.afterAr };
       }
       if (after) {
@@ -892,13 +1051,14 @@
   /* ---------- الإعدادات ---------- */
   function openSettings() {
     sfx.tap();
-    const s = progress.settings;
+    const s = store.settings;
     const sheet = openSheet(`
       <h2>⚙️ الإعدادات</h2>
       <button class="setting" data-k="arabicVoice" type="button"><span>🗣️ روبو يشرح بصوت عربي<br><small style="color:var(--muted)">${hasArabicVoice() ? '' : 'لا يوجد صوت عربي في هذا الجهاز، سيظهر الشرح مكتوباً'}</small></span><span class="switch ${s.arabicVoice ? 'on' : ''}"></span></button>
       <button class="setting" data-k="slow" type="button"><span>🐢 نطق إنجليزي بطيء</span><span class="switch ${s.slow ? 'on' : ''}"></span></button>
       <p style="text-align:start">👨‍👩‍👧 <b>للأهل:</b> الميكروفون يعمل في Chrome (أندرويد) و Safari (آيفون)، ويحتاج إنترنت للتعرّف على الصوت. التقدم محفوظ على هذا الجهاز فقط.</p>
-      <div class="btn-row"><button class="btn white" id="resetBtn" type="button">🗑️ مسح التقدم والبدء من جديد</button></div>`);
+      <div class="btn-row"><button class="btn white" id="resetBtn" type="button">🗑️ مسح نجوم ${esc(progress.name)} والبدء من جديد</button></div>
+      <div class="btn-row"><button class="btn white" id="manageBtn" type="button">👨‍👩‍👧 إدارة ملفات الأطفال</button></div>`);
     sheet.querySelectorAll('.setting').forEach((b) => b.addEventListener('click', () => {
       const k = b.dataset.k;
       s[k] = !s[k];
@@ -908,15 +1068,15 @@
       if (k === 'slow') say('Hello! I am Robo.', '', { arabic: false });
     }));
     $('#resetBtn').addEventListener('click', () => {
-      if (!confirm('هل تريد مسح كل النجوم والتقدم؟')) return;
-      const settings = progress.settings;
-      progress = defaults();
-      progress.settings = settings;
+      if (!confirm(`هل تريد مسح كل نجوم ${progress.name} وتقدّمه؟`)) return;
+      progress.levels = {};
+      progress.celebrated = [];
       saveProgress();
       closeSheet();
       greetOnHome = true;
       go('#/home');
     });
+    $('#manageBtn').addEventListener('click', () => { closeSheet(); go('#/profiles'); });
   }
 
   /* ---------- التثبيت كتطبيق (PWA) ---------- */

@@ -272,3 +272,38 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: 0; backg
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ---------- ملفات الأطفال ---------- */
+.profile-btn { font-size: 30px; }
+.profiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.profile-tile {
+  position: relative; border-radius: var(--radius); padding: 16px 10px; min-height: 170px;
+  background: var(--card); box-shadow: var(--shadow); border: 5px solid transparent;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.profile-tile:active { transform: translateY(4px); }
+.profile-tile .p-avatar {
+  font-size: 64px; width: 100px; height: 100px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--c, #F1EEFF); line-height: 1;
+}
+.profile-tile .p-name { font-size: 24px; font-weight: 800; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-tile .p-stars { font-size: 18px; font-weight: 700; color: var(--muted); }
+.profile-tile.current { border-color: var(--yellow); }
+.profile-tile.add { border: 4px dashed #C9C2F5; background: rgba(255,255,255,.6); box-shadow: none; }
+.profile-tile.add .p-avatar { background: #F1EEFF; font-size: 48px; }
+.profile-tile .edit-badge { position: absolute; top: 10px; left: 12px; font-size: 26px; }
+.field-label { display: block; font-size: 21px; font-weight: 800; margin: 6px 4px 8px; }
+.name-input {
+  width: 100%; font: inherit; font-size: 26px; font-weight: 700; padding: 14px 18px; border-radius: 20px;
+  border: 4px solid #E3DEFF; background: var(--card); color: var(--ink); outline: none;
+  -webkit-user-select: text; user-select: text;
+}
+.name-input:focus { border-color: var(--primary); }
+.hint { font-size: 16px; color: var(--muted); margin: 8px 4px 16px; line-height: 1.5; }
+.avatars { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; }
+.avatar-choice {
+  aspect-ratio: 1 / 1; font-size: clamp(36px, 11vw, 52px); border-radius: 22px; background: var(--card);
+  box-shadow: var(--shadow); border: 4px solid transparent; display: grid; place-items: center;
+}
+.avatar-choice.on { border-color: var(--green); background: #E9FBEF; transform: scale(1.06); }
+@media (min-width: 560px) { .profiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .avatars { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
