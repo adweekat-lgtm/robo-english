@@ -247,41 +247,60 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   let activeRec = null;
 
-  function listen(timeoutMs = 6500) {
+  let activeListen = null;
+  /**
+   * يستمع للطفل ويُرجع ما سمعه. لا يعتمد أبداً على onend، لأن Safari في الآيفون
+   * أحياناً لا يُطلقه (فيعلق الزر على «أسمعك…»):
+   *  - ننهي فوراً عند نتيجة نهائية، أو عند نتيجة جزئية تطابق المطلوب (match)،
+   *  - وبعد المهلة نطلب stop()، وإن لم يرد المتصفح خلال ثانية ننهي بأنفسنا.
+   */
+  function listen({ timeoutMs = 6000, match = null } = {}) {
     return new Promise((resolve) => {
       if (!SR) { resolve({ error: 'unsupported', texts: [] }); return; }
       hush();
       const rec = new SR();
-      activeRec = rec;
       rec.lang = 'en-US';
-      rec.interimResults = false;
+      rec.interimResults = true;
       rec.continuous = false;
       rec.maxAlternatives = 5;
       const texts = [];
       let settled = false;
-      const end = (res) => {
+      let hard = null;
+      const finish = (res = {}) => {
         if (settled) return;
         settled = true;
         clearTimeout(guard);
-        activeRec = null;
+        clearTimeout(hard);
+        activeListen = null;
         setRobot('listening', false);
-        resolve(res);
+        try { rec.abort(); } catch (e) { /* ignore */ }
+        resolve({ ...res, texts: [...new Set(texts.map((t) => t.trim()).filter(Boolean))] });
       };
       rec.onresult = (e) => {
-        for (const result of e.results) for (const alt of result) texts.push(alt.transcript);
+        let final = false;
+        for (let i = e.resultIndex || 0; i < e.results.length; i++) {
+          const r = e.results[i];
+          for (let j = 0; j < r.length; j++) texts.push(r[j].transcript);
+          if (r.isFinal) final = true;
+        }
+        if (final || (match && match(texts))) finish();
       };
-      rec.onerror = (e) => end({ error: e.error, texts });
-      rec.onend = () => end({ texts });
-      const guard = setTimeout(() => { try { rec.stop(); } catch (e) { end({ texts }); } }, timeoutMs);
+      rec.onerror = (e) => finish({ error: e.error });
+      rec.onend = () => finish();
+      const guard = setTimeout(() => {
+        try { rec.stop(); } catch (e) { /* ignore */ }
+        hard = setTimeout(() => finish(), 1200);
+      }, timeoutMs);
+      activeListen = { cancel: () => finish({ cancelled: true }) };
       try {
         rec.start();
         setRobot('listening', true);
       } catch (e) {
-        end({ error: 'start-failed', texts });
+        finish({ error: 'start-failed' });
       }
     });
   }
-  function stopListening() { if (activeRec) { try { activeRec.abort(); } catch (e) { /* ignore */ } } }
+  function stopListening() { if (activeListen) activeListen.cancel(); }
 
   function micErrorMessage(err) {
     if (err === 'not-allowed' || err === 'service-not-allowed') return 'اسمح للتطبيق باستخدام الميكروفون من إعدادات المتصفح 🎤';
@@ -369,7 +388,7 @@
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSheet(); });
 
   /** زر الميكروفون: يستمع ويستدعي check(texts) ⇒ true/false */
-  async function micAttempt(btn, resultEl, check) {
+  async function micAttempt(btn, resultEl, check, { early = true } = {}) {
     if (btn.classList.contains('listening')) { stopListening(); return null; }
     if (!SR) {
       toast('الميكروفون غير مدعوم في هذا المتصفح. استخدم Chrome على أندرويد أو Safari على آيفون. الآن: قلها بصوت عالٍ! 🗣️', 5000);
@@ -380,9 +399,12 @@
     btn.innerHTML = '👂 أسمعك… تكلّم';
     resultEl.className = 'result';
     resultEl.textContent = '';
-    const res = await listen();
+    const res = await listen({ match: early ? check : null });
     btn.classList.remove('listening');
     btn.innerHTML = label;
+    if (res.cancelled) return null;
+    // الآيفون يحتاج لحظة ليعيد الصوت للسماعة بعد الميكروفون، وإلا قد لا يُسمع كلام عمو أحمد
+    await wait(350);
     const errMsg = micErrorMessage(res.error);
     if (errMsg) { toast(errMsg, 5000); return null; }
     if (!res.texts.length) {
@@ -946,7 +968,7 @@
             chosen = step.replies.find((x) => heardKeys(texts, x.keys));
           }
           return !!chosen;
-        });
+        }, { early: step.type !== 'name' }); // الاسم: ننتظر الجملة كاملة
         if (r === 'unsupported') return;
         if (r === true && chosen) {
           kidAnswer(step, chosen, name, true);
