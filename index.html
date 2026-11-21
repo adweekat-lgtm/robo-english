@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#7C5CFF">
+  <meta name="description" content="تطبيق لتعليم الأطفال اللغة الإنجليزية مع الروبوت روبو">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="روبو">
+  <title>روبو يعلّمني الإنجليزي</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+Bhaijaan+2:wght@500;700;800&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app" class="is-splash">
+    <header class="topbar">
+      <button id="backBtn" class="icon-btn" type="button" aria-label="رجوع">→</button>
+      <div id="title" class="title">روبو</div>
+      <div class="stars-pill" aria-label="نجومك"><span>⭐</span><span id="starCount">0</span></div>
+    </header>
+
+    <section class="robot-dock">
+      <div id="robot" class="robot" aria-hidden="true">
+        <svg viewBox="0 0 140 150">
+          <g class="r-antenna">
+            <line x1="70" y1="12" x2="70" y2="28" stroke="#5B6CFF" stroke-width="5" stroke-linecap="round"/>
+            <circle class="r-bulb" cx="70" cy="11" r="8" fill="#FFD93D"/>
+          </g>
+          <rect x="9" y="50" width="15" height="30" rx="7" fill="#5B6CFF"/>
+          <rect x="116" y="50" width="15" height="30" rx="7" fill="#5B6CFF"/>
+          <rect x="20" y="26" width="100" height="80" rx="28" fill="#7C8CFF"/>
+          <rect x="31" y="37" width="78" height="57" rx="19" fill="#22305E"/>
+          <g class="r-eyes">
+            <ellipse class="r-eye" cx="54" cy="60" rx="8" ry="10" fill="#5CF2FF"/>
+            <ellipse class="r-eye" cx="86" cy="60" rx="8" ry="10" fill="#5CF2FF"/>
+            <circle cx="57" cy="56" r="3" fill="#fff"/>
+            <circle cx="89" cy="56" r="3" fill="#fff"/>
+          </g>
+          <circle cx="40" cy="78" r="5" fill="#FF8FB1" opacity=".85"/>
+          <circle cx="100" cy="78" r="5" fill="#FF8FB1" opacity=".85"/>
+          <path class="r-smile" d="M58 77 Q70 88 82 77" stroke="#5CF2FF" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <ellipse class="r-talk" cx="70" cy="81" rx="10" ry="6" fill="#5CF2FF"/>
+          <rect x="62" y="104" width="16" height="6" rx="3" fill="#5B6CFF"/>
+          <g class="r-arm r-arm-l"><rect x="16" y="112" width="26" height="12" rx="6" fill="#5B6CFF"/></g>
+          <g class="r-arm r-arm-r"><rect x="98" y="112" width="26" height="12" rx="6" fill="#5B6CFF"/></g>
+          <rect x="38" y="108" width="64" height="38" rx="16" fill="#7C8CFF"/>
+          <path d="M70 137 l-9 -9 a6 6 0 0 1 9 -8 a6 6 0 0 1 9 8 z" fill="#FF6B8B"/>
+        </svg>
+      </div>
+      <button id="bubble" class="bubble" type="button" aria-live="polite" title="اضغط لتسمع مرة أخرى">
+        <span class="b-en" dir="ltr"></span>
+        <span class="b-ar"></span>
+      </button>
+    </section>
+
+    <main id="main"></main>
+  </div>
+
+  <div id="overlay" class="overlay" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="confetti" class="confetti" aria-hidden="true"></div>
+
+  <script src="levels.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
