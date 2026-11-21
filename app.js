@@ -36,7 +36,7 @@
   const AVATARS = ['🦁', '🐼', '🦊', '🐯', '🐸', '🐵', '🦄', '🐨', '🐰', '🐻', '🐙', '🦖'];
   const COLORS = ['#FF6B6B', '#FF9F43', '#1DD1A1', '#48DBFB', '#7C5CFF', '#F368E0'];
   const MAX_PROFILES = 6;
-  const defaultSettings = () => ({ arabicVoice: true, slow: true });
+  const defaultSettings = () => ({ arabicVoice: true, slow: true, welcome: true });
   const newProfile = (name, avatar, color) => ({
     id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
     name, avatar, color: color || COLORS[0], nameEn: '', levels: {}, celebrated: [],
@@ -433,6 +433,60 @@
   }
 
   /* =====================================================================
+   * رسالة الترحيب بصوت عمو أحمد الحقيقي (تسجيل في audio/welcome.m4a)
+   * ===================================================================== */
+  const WELCOME_SRC = 'audio/welcome.m4a';
+  const WELCOME_TEXT = { en: 'Welcome!', ar: 'أهلاً أهلاً يا حبايبي! أنا عمو أحمد 💛' };
+  let welcomeUrl = null;
+  let welcomeAudio = null;
+  // نحمّله مسبقاً كـ blob: يعمل من الكاش بدون إنترنت، ويتجنب مشاكل Safari مع طلبات Range للصوت
+  try {
+    fetch(WELCOME_SRC).then((r) => (r.ok ? r.blob() : null)).then((b) => {
+      if (b && b.size) welcomeUrl = URL.createObjectURL(b);
+    }).catch(() => {});
+  } catch (e) { /* ignore */ }
+
+  function playWelcome() {
+    if (store.settings.welcome === false) return;
+    stopWelcome();
+    let a;
+    try { a = new Audio(welcomeUrl || WELCOME_SRC); } catch (e) { return; }
+    welcomeAudio = a;
+    const done = (failed) => {
+      if (welcomeAudio !== a) return;
+      welcomeAudio = null;
+      setRobot('talking', false);
+      afterWelcome(failed);
+    };
+    a.addEventListener('playing', () => { if (welcomeAudio === a) setRobot('talking', true); });
+    a.addEventListener('ended', () => done(false));
+    a.addEventListener('error', () => done(true));
+    setBubble(WELCOME_TEXT.en, WELCOME_TEXT.ar);
+    robotMood('wave', 1800);
+    try {
+      const p = a.play();
+      if (p && p.catch) p.catch(() => done(true));
+    } catch (e) { done(true); }
+  }
+  function stopWelcome() {
+    const a = welcomeAudio;
+    if (!a) return;
+    welcomeAudio = null;
+    try { a.pause(); } catch (e) { /* ignore */ }
+    setRobot('talking', false);
+  }
+  /** بعد انتهاء الترحيب: نكمل كلام الشاشة الحالية (أو نقوله بالصوت الآلي إن فشل التشغيل) */
+  function afterWelcome(failed) {
+    const h = location.hash;
+    let line = null;
+    if (/^#\/profiles\/new$/.test(h)) line = ['Hello! What is your name?', 'أهلاً! اكتب اسمك واختر صورتك.'];
+    else if (/^#\/profiles$/.test(h)) line = ['Who is playing today?', 'مين بيلعب اليوم؟ اضغط على صورتك!'];
+    if (!line) return;
+    if (failed) say(line[0], line[1]);
+    else setBubble(line[0], line[1]);
+  }
+
+  /* =====================================================================
    * التنقل (hash router) — يدعم زر الرجوع في الجوال
    * ===================================================================== */
   let started = false;
@@ -470,6 +524,8 @@
 
   function route() {
     hush();
+    // رسالة الترحيب تستمر على شاشة اختيار الطفل فقط، وتتوقف عند الانتقال لغيرها
+    if (!/^#\/profiles(\/new)?$/.test(location.hash)) stopWelcome();
     stopListening();
     closeSheet();
     if (screenCleanup) { screenCleanup(); screenCleanup = null; }
@@ -510,6 +566,7 @@
       // أول نطق يجب أن يكون بعد لمسة من المستخدم (شرط في iOS)
       if (synth) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); }
       // كل مرة يُفتح التطبيق: يختار الطفل ملفه أولاً
+      playWelcome(); // يجب أن يبدأ داخل لمسة الزر (شرط الآيفون)
       go(store.profiles.length ? '#/profiles' : '#/profiles/new');
     });
   }
@@ -552,7 +609,7 @@
     if (add) add.addEventListener('click', () => { sfx.tap(); editMode = false; go('#/profiles/new'); });
     $('#editToggle').addEventListener('click', () => { sfx.tap(); editMode = !editMode; renderProfiles(); });
     robotMood('wave', 1500);
-    say('Who is playing today?', 'مين بيلعب اليوم؟ اضغط على صورتك!');
+    if (!welcomeAudio) say('Who is playing today?', 'مين بيلعب اليوم؟ اضغط على صورتك!');
   }
 
   function renderProfileForm(prof) {
@@ -609,8 +666,8 @@
       saveProgress();
       go('#/profiles');
     });
-    if (isNew) say('Hello! What is your name?', 'أهلاً! اكتب اسمك واختر صورتك.');
-    else setBubble('Change your name or picture.', 'غيّر الاسم أو الصورة ثم اضغط حفظ.');
+    if (!isNew) setBubble('Change your name or picture.', 'غيّر الاسم أو الصورة ثم اضغط حفظ.');
+    else if (!welcomeAudio) say('Hello! What is your name?', 'أهلاً! اكتب اسمك واختر صورتك.');
   }
 
   let greetOnHome = true;
@@ -1120,6 +1177,7 @@
     const sheet = openSheet(`
       <h2>⚙️ الإعدادات</h2>
       <button class="setting" data-k="arabicVoice" type="button"><span>🗣️ عمو أحمد يشرح بصوت عربي<br><small style="color:var(--muted)">${hasArabicVoice() ? '' : 'لا يوجد صوت عربي في هذا الجهاز، سيظهر الشرح مكتوباً'}</small></span><span class="switch ${s.arabicVoice ? 'on' : ''}"></span></button>
+      <button class="setting" data-k="welcome" type="button"><span>🎙️ رسالة ترحيب عمو أحمد عند فتح التطبيق</span><span class="switch ${s.welcome ? 'on' : ''}"></span></button>
       <button class="setting" data-k="slow" type="button"><span>🐢 نطق إنجليزي بطيء</span><span class="switch ${s.slow ? 'on' : ''}"></span></button>
       ${voicePicker('ar', '🇸🇦 الصوت العربي', 'مرحباً! أنا عمو أحمد. هيا نتعلم الإنجليزية معاً.')}
       ${voicePicker('en', '🇺🇸 الصوت الإنجليزي', 'Hello! I am Uncle Ahmad. Let us learn English!')}
@@ -1139,6 +1197,7 @@
       saveProgress();
       sfx.tap();
       if (k === 'slow') say('Hello! I am Uncle Ahmad.', '', { arabic: false });
+      if (k === 'welcome') { if (s.welcome) { hush(); playWelcome(); } else stopWelcome(); }
     }));
     sheet.querySelectorAll('.voice-select').forEach((sel) => sel.addEventListener('change', () => {
       store.settings[sel.dataset.base === 'ar' ? 'arVoice' : 'enVoice'] = sel.value;

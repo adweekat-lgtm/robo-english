@@ -29,6 +29,11 @@
   - مدعوم في Chrome أندرويد و Safari آيفون، ويحتاج إنترنت عادةً. إن لم يكن مدعوماً يطلب عمو أحمد من الطفل أن يقولها بصوت عالٍ ويكافئه (بدون تحقق) — هذا مقصود.
 - الصور: إيموجي كبيرة (تعمل بدون إنترنت وبلا ملفات). يمكن استبدالها لاحقاً بصور PNG/SVG في حقل `img`.
 - أصوات المكافأة: نغمات Web Audio مولّدة (لا ملفات صوت).
+- **رسالة الترحيب**: تسجيل حقيقي بصوت عمو أحمد في `audio/welcome.m4a` (~25 ثانية، AAC أحادي 96k، مُعالج بـ ffmpeg loudnorm إلى ‎-16 LUFS).
+  - تبدأ عند الضغط على «▶ ابدأ» (لازم داخل لمسة المستخدم في iOS)، وتستمر على شاشة اختيار الطفل فقط؛ أي انتقال آخر يوقفها (`stopWelcome()` في `route()`).
+  - تُحمَّل مسبقاً كـ blob عبر `fetch` (تعمل من الكاش بدون إنترنت وتتجنب مشاكل Safari مع Range). الـ SW لا يعترض طلبات `Range`.
+  - إن فشل التشغيل يقول عمو أحمد سطر الشاشة بالصوت الآلي (`afterWelcome(true)`). يمكن إيقافها من الإعدادات (`settings.welcome`).
+  - لاستبدال التسجيل: `ffmpeg -i in.m4a -ac 1 -af "loudnorm=I=-16:TP=-1.5:LRA=11" -ar 44100 -c:a aac -b:a 96k -movflags +faststart audio/welcome.m4a` ثم ارفع `VERSION`.
 - التقدم يُحفظ في `localStorage` بالمفتاح `robo-english-v2` (على الجهاز فقط):
   `{ profiles: [{ id, name, avatar, color, nameEn, levels, celebrated }], currentId, settings }`.
   - `name` الاسم كما كتبه الأهل (عربي أو إنجليزي) ويظهر في النص العربي. `nameEn` الاسم الملتقط بالميكروفون؛ الصوت الإنجليزي ينطق `nameEn` أو `name` إن كان بحروف لاتينية فقط (`spokenName()`).
@@ -52,6 +57,7 @@
   sw.js                 Service Worker (العمل بدون إنترنت)
   manifest.webmanifest  إعدادات التثبيت كتطبيق
   icons/                أيقونات 192/512/maskable + SVG
+  audio/welcome.m4a     رسالة الترحيب بصوت عمو أحمد الحقيقي
   .nojekyll             يمنع معالجة Jekyll في GitHub Pages
 ```
 
