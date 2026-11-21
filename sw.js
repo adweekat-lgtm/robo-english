@@ -1,6 +1,6 @@
 /* Service Worker: يجعل التطبيق يعمل بدون إنترنت بعد أول فتح.
  * عند تعديل أي ملف في التطبيق: غيّر رقم VERSION ليحصل الأطفال على النسخة الجديدة. */
-const VERSION = 'robo-v3';
+const VERSION = 'robo-v4';
 const SHELL = [
   './',
   './index.html',

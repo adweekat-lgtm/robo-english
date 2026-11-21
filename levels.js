@@ -42,17 +42,17 @@ window.LEVELS = [
       { id: 'sun',   en: 'sun',   phrase: 'the sun', ar: 'شمس',   arDef: 'الشمس',   img: '☀️', sentence: 'The sun is hot.',      sentenceAr: 'الشمس حارّة.', alts: ['son', 'sunny', 'some'] },
     ],
     /*
-     * سيناريو المحادثة: كل خطوة يقولها روبو، ثم يختار الطفل رداً (بالضغط أو بالكلام).
+     * سيناريو المحادثة: كل خطوة يقولها عمو أحمد، ثم يختار الطفل رداً (بالضغط أو بالكلام).
      * type:'name'    يلتقط اسم الطفل من كلامه ("My name is Sara")
      * type:'picture' يعرض صورة كلمة ويسأل What is this? (الردود تُولَّد تلقائياً)
-     * after / afterAr  ما يقوله روبو بعد رد الطفل ({name} يُستبدل باسم الطفل إن عُرف)
+     * after / afterAr  ما يقوله عمو أحمد بعد رد الطفل ({name} يُستبدل باسم الطفل إن عُرف)
      */
     chat: [
       {
-        robot: 'Hello! I am Robo.', ar: 'مرحباً! أنا روبو.',
+        robot: 'Hello! I am Uncle Ahmad.', ar: 'مرحباً! أنا عمو أحمد.',
         replies: [
           { en: 'Hello!', ar: 'مرحباً!', keys: ['hello', 'hallo', 'hi', 'hey'] },
-          { en: 'Hi, Robo!', ar: 'أهلاً يا روبو!', keys: ['robo', 'robot'] },
+          { en: 'Hi, Uncle Ahmad!', ar: 'أهلاً يا عمو أحمد!', keys: ['uncle', 'ahmad', 'ahmed', 'robo', 'robot'] },
         ],
       },
       {
@@ -84,7 +84,7 @@ window.LEVELS = [
         robot: 'Goodbye! See you soon!', ar: 'مع السلامة! أراك قريباً!',
         replies: [
           { en: 'Goodbye!', ar: 'مع السلامة!', keys: ['goodbye', 'good bye', 'bye'] },
-          { en: 'Bye bye, Robo!', ar: 'باي باي يا روبو!', keys: ['bye', 'robo'] },
+          { en: 'Bye bye, Uncle Ahmad!', ar: 'باي باي يا عمو أحمد!', keys: ['bye', 'uncle', 'ahmad', 'ahmed'] },
         ],
       },
     ],
