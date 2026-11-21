@@ -134,16 +134,33 @@
   }
   const VOICE_PREF = {
     en: ['Google US English', 'Samantha', 'Microsoft Jenny', 'Microsoft Aria', 'Karen', 'Google UK English Female', 'Moira'],
-    ar: ['Google العربية', 'Majed', 'Maged', 'Laila', 'Tarik', 'Microsoft Hamed', 'Microsoft Zariyah', 'Microsoft Salma'],
+    ar: ['Google العربية', 'Majed', 'Maged', 'Mariam', 'Laila', 'Tarik', 'Microsoft Hamed', 'Microsoft Zariyah', 'Microsoft Salma'],
   };
+  const langBase = (v) => (v.lang || '').toLowerCase().replace('_', '-');
+  const voicesFor = (base) => voices.filter((v) => langBase(v).startsWith(base));
+  /** تقييم جودة الصوت: الأصوات المحسّنة/الطبيعية أولاً (أقل آلية بكثير) */
+  function voiceScore(v, base) {
+    const n = v.name.toLowerCase();
+    let score = 0;
+    if (/premium|ممتاز/.test(n)) score += 40;
+    if (/enhanced|محسّن|محسن|natural|neural|wavenet/.test(n)) score += 30;
+    if (/compact|مضغوط|eloquence|novelty/.test(n)) score -= 20;
+    const pref = VOICE_PREF[base] || [];
+    const idx = pref.findIndex((p) => v.name.includes(p));
+    if (idx >= 0) score += 10 - idx * 0.5;
+    if (base === 'ar' && /sa$/.test(langBase(v))) score += 1;
+    return score;
+  }
   function pickVoice(lang) {
     const base = lang.slice(0, 2).toLowerCase();
-    const cand = voices.filter((v) => (v.lang || '').toLowerCase().replace('_', '-').startsWith(base));
-    for (const name of VOICE_PREF[base] || []) {
-      const v = cand.find((x) => x.name.includes(name));
+    const cand = voicesFor(base);
+    if (!cand.length) return null;
+    const chosen = store.settings[base === 'ar' ? 'arVoice' : 'enVoice'];
+    if (chosen) {
+      const v = cand.find((x) => x.voiceURI === chosen || x.name === chosen);
       if (v) return v;
     }
-    return cand.find((v) => v.lang.toLowerCase().replace('_', '-') === lang.toLowerCase()) || cand[0] || null;
+    return cand.slice().sort((a, b) => voiceScore(b, base) - voiceScore(a, base))[0];
   }
   const hasArabicVoice = () => !!pickVoice('ar-SA');
 
@@ -201,7 +218,7 @@
     if (ar && opts.arabic !== false && store.settings.arabicVoice && hasArabicVoice()) {
       await wait(150);
       if (my !== saySeq) return false;
-      await speak(ar, { lang: 'ar-SA', pitch: 1.1 });
+      await speak(ar, { lang: 'ar-SA', pitch: 1, rate: 0.9 }); // سرعة أهدأ ونبرة طبيعية: أقل آلية
     }
     return my === saySeq;
   }
@@ -1079,6 +1096,24 @@
   }
 
   /* ---------- الإعدادات ---------- */
+  /** قائمة اختيار الصوت مع زر تجربة */
+  function voicePicker(base, label, sample) {
+    const list = voicesFor(base).slice().sort((a, b) => voiceScore(b, base) - voiceScore(a, base));
+    if (!list.length) return '';
+    const current = store.settings[base === 'ar' ? 'arVoice' : 'enVoice'] || '';
+    const best = list[0];
+    const opts = [`<option value="">تلقائي — الأفضل (${esc(best.name)})</option>`]
+      .concat(list.map((v) => `<option value="${esc(v.voiceURI || v.name)}" ${current && (current === v.voiceURI || current === v.name) ? 'selected' : ''}>${esc(v.name)}${voiceScore(v, base) >= 30 ? ' ⭐' : ''}</option>`));
+    return `
+      <div class="setting voice-row">
+        <span>${label}</span>
+        <div class="voice-ctl">
+          <select class="voice-select" data-base="${base}" dir="auto">${opts.join('')}</select>
+          <button class="btn white voice-test" data-base="${base}" data-sample="${esc(sample)}" type="button" aria-label="تجربة">🔊</button>
+        </div>
+      </div>`;
+  }
+
   function openSettings() {
     sfx.tap();
     const s = store.settings;
@@ -1086,16 +1121,33 @@
       <h2>⚙️ الإعدادات</h2>
       <button class="setting" data-k="arabicVoice" type="button"><span>🗣️ عمو أحمد يشرح بصوت عربي<br><small style="color:var(--muted)">${hasArabicVoice() ? '' : 'لا يوجد صوت عربي في هذا الجهاز، سيظهر الشرح مكتوباً'}</small></span><span class="switch ${s.arabicVoice ? 'on' : ''}"></span></button>
       <button class="setting" data-k="slow" type="button"><span>🐢 نطق إنجليزي بطيء</span><span class="switch ${s.slow ? 'on' : ''}"></span></button>
+      ${voicePicker('ar', '🇸🇦 الصوت العربي', 'مرحباً! أنا عمو أحمد. هيا نتعلم الإنجليزية معاً.')}
+      ${voicePicker('en', '🇺🇸 الصوت الإنجليزي', 'Hello! I am Uncle Ahmad. Let us learn English!')}
+      ${isIOS() ? `<details class="voice-help"><summary>📲 صوت عربي أوضح على الآيفون (مجاناً)</summary>
+        <ol>
+          <li>افتح <b>الإعدادات</b> ← <b>تسهيلات الاستخدام</b> ← <b>المحتوى المنطوق</b> ← <b>الأصوات</b> ← <b>العربية</b>.</li>
+          <li>اختر صوتاً واضغط زر التنزيل ⬇️ للنسخة <b>المحسّنة (Enhanced)</b>، وانتظر حتى ينتهي التنزيل.</li>
+          <li>أغلق التطبيق تماماً وافتحه، ثم اختر الصوت الجديد من القائمة أعلاه.</li>
+        </ol></details>` : ''}
       <p style="text-align:start">👨‍👩‍👧 <b>للأهل:</b> الميكروفون يعمل في Chrome (أندرويد) و Safari (آيفون)، ويحتاج إنترنت للتعرّف على الصوت. التقدم محفوظ على هذا الجهاز فقط.</p>
       <div class="btn-row"><button class="btn white" id="resetBtn" type="button">🗑️ مسح نجوم ${esc(progress.name)} والبدء من جديد</button></div>
       <div class="btn-row"><button class="btn white" id="manageBtn" type="button">👨‍👩‍👧 إدارة ملفات الأطفال</button></div>`);
-    sheet.querySelectorAll('.setting').forEach((b) => b.addEventListener('click', () => {
+    sheet.querySelectorAll('.setting[data-k]').forEach((b) => b.addEventListener('click', () => {
       const k = b.dataset.k;
       s[k] = !s[k];
       $('.switch', b).classList.toggle('on', s[k]);
       saveProgress();
       sfx.tap();
       if (k === 'slow') say('Hello! I am Uncle Ahmad.', '', { arabic: false });
+    }));
+    sheet.querySelectorAll('.voice-select').forEach((sel) => sel.addEventListener('change', () => {
+      store.settings[sel.dataset.base === 'ar' ? 'arVoice' : 'enVoice'] = sel.value;
+      saveProgress();
+      sheet.querySelector(`.voice-test[data-base="${sel.dataset.base}"]`).click();
+    }));
+    sheet.querySelectorAll('.voice-test').forEach((btn) => btn.addEventListener('click', () => {
+      const base = btn.dataset.base;
+      speak(btn.dataset.sample, base === 'ar' ? { lang: 'ar-SA', pitch: 1, rate: 0.9 } : {});
     }));
     $('#resetBtn').addEventListener('click', () => {
       if (!confirm(`هل تريد مسح كل نجوم ${progress.name} وتقدّمه؟`)) return;
