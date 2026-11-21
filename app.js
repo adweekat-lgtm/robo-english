@@ -103,12 +103,22 @@
     const d = activityDone(L);
     return (d.learn ? 1 : 0) + (d.play ? 1 : 0) + (d.talk ? 1 : 0);
   }
-  function isUnlocked(L) {
-    if (!L.ready) return false;
-    if (L.id === 1) return true;
-    const prev = getLevel(L.id - 1);
-    return !!prev && levelStars(prev) === 3;
-  }
+  // كل المستويات الجاهزة مفتوحة للجميع: كل فرد في العائلة يبدأ من المستوى الذي يناسبه
+  function isUnlocked(L) { return !!L.ready; }
+
+  /* قوالب الجمل التي تتغيّر حسب نوع المستوى (أشياء، ألوان، أرقام، أفعال، جمل...).
+   * يمكن لأي مستوى أن يستبدل أياً منها في الحقل t. {en} {phrase} {ar} {arDef} {arI} تُملأ من الكلمة. */
+  const TPL = {
+    ask: ['Where is the {en}?', 'أين {arDef}؟'],
+    right: 'It is {phrase}!',
+    wrong: ['Oops! This is {phrase}. Try again!', 'هذه صورة {ar}. حاول مرة ثانية!'],
+    picQ: ['What is this?', 'ما هذا؟'],
+    picA: ['It is {phrase}.', 'صورة {ar}'],
+    picRight: ['It is {phrase}!', 'هذه صورة {ar}.'],
+    picWrong: ['Good try! It is {phrase}. Say: {en}!', 'محاولة جيدة! هذه صورة {ar}، وبالإنجليزي: {en}'],
+  };
+  const tpl = (L, key) => (L.t && L.t[key]) || TPL[key];
+  const fill = (str, w) => String(str).replace(/\{(\w+)\}/g, (_, k) => (w[k] != null ? w[k] : ''));
   function totalStars() {
     return LEVELS.reduce((sum, L) => sum + (L.ready ? levelStars(L) + lp(L.id).spoken.length : 0), 0);
   }
@@ -326,7 +336,7 @@
     return '';
   }
 
-  const norm = (s) => String(s).toLowerCase().replace(/[’]/g, "'").replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const norm = (s) => String(s).toLowerCase().replace(/[’]/g, "'").replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
   function lev(a, b) {
     const m = a.length, n = b.length;
     if (!m) return n;
@@ -342,7 +352,22 @@
     return prev[n];
   }
   /** هل نطق الطفل الكلمة؟ (متسامح قليلاً لأن نطق الأطفال غير مثالي) */
+  const tokMatch = (heard, want) => heard === want
+    || (want.length >= 4 && lev(heard, want) <= 1) || (want.length >= 7 && lev(heard, want) <= 2);
+  /** جملة كاملة: نقبلها إن قيل ~70% من كلماتها (الأطفال يبلعون كلمات صغيرة مثل a / the) */
+  function heardPhrase(texts, targets) {
+    for (const t of texts) {
+      const toks = norm(t).split(' ');
+      for (const target of targets) {
+        const want = target.split(' ').filter(Boolean);
+        const hits = want.filter((w) => toks.some((k) => tokMatch(k, w))).length;
+        if (want.length && hits / want.length >= 0.7) return true;
+      }
+    }
+    return false;
+  }
   function heardWord(texts, word) {
+    if (norm(word.en).includes(' ')) return heardPhrase(texts, [word.en, ...(word.alts || [])].map(norm));
     const targets = [word.en, ...(word.alts || [])].map(norm);
     for (const t of texts) {
       const tokens = norm(t).split(' ');
@@ -677,7 +702,7 @@
     const tiles = LEVELS.map((L) => {
       const unlocked = isUnlocked(L);
       const stars = levelStars(L);
-      const lock = !L.ready ? '<span class="lock">🔒 قريباً</span>' : !unlocked ? '<span class="lock">🔒 أكمل السابق</span>' : '';
+      const lock = '<span class="lock">🔒 قريباً</span>';
       return `
         <button class="level-tile ${unlocked ? '' : 'locked'} ${current === L ? 'current' : ''}" style="--c:${L.color}" data-id="${L.id}" type="button">
           <span class="num">${L.id}</span>
@@ -766,7 +791,7 @@
             <button class="pcard ${p.heard.includes(w.id) ? 'heard' : ''}" data-id="${w.id}" type="button" aria-label="${esc(w.en)}">
               <span class="badge">${p.spoken.includes(w.id) ? '⭐' : p.heard.includes(w.id) ? '👂' : ''}</span>
               <span class="emoji">${w.img}</span>
-              <span class="word" dir="ltr">${esc(w.en)}</span>
+              <span class="word ${w.en.length > 10 ? 'long' : ''}" dir="ltr">${esc(w.en)}</span>
             </button>`).join('')}
         </div>
         <div style="margin-top:18px" id="learnNext"></div>
@@ -807,7 +832,7 @@
     const next = L.words[(idx + 1) % L.words.length];
     const sheet = openSheet(`
       <div class="big-emoji">${w.img}</div>
-      <div class="big-word" dir="ltr">${esc(w.en)}</div>
+      <div class="big-word ${w.en.length > 10 ? 'long' : ''}" dir="ltr">${esc(w.en)}</div>
       <div class="big-ar">${esc(w.ar)}</div>
       <div class="example"><span class="en-text" dir="ltr">${esc(w.sentence)}</span>${esc(w.sentenceAr)}</div>
       <div class="btn-row">
@@ -843,7 +868,7 @@
         const btn = e.target.closest('[data-act]');
         const r = await micAttempt(btn, resultEl, (texts) => heardWord(texts, w));
         if (r === 'unsupported') {
-          await say(`Say: ${w.en}!`, `قل: ${w.en}`, { arabic: false });
+          await say(`Say: ${w.en.replace(/[.!?]+$/, "")}!`, `قل: ${w.en}`, { arabic: false });
           await wait(2200);
           awardWord();
           return;
@@ -867,7 +892,7 @@
       confetti(40);
       robotMood('happy', 1000);
       if (!p.spoken.includes(w.id)) { p.spoken.push(w.id); saveProgress(); }
-      say(`${en} ${w.en}!`, ar, { arabic: false });
+      say(`${en} ${w.en.replace(/[.!?]+$/, "")}!`, ar, { arabic: false });
       checkLevelComplete(L);
     }
   }
@@ -896,7 +921,8 @@
           </div>
           <div class="replay-row"><button class="btn white" id="replayQ" type="button">🔊 أعد السؤال</button></div>
         </div>`;
-      const ask = () => say(`Where is the ${target.en}?`, `أين ${target.arDef}؟`);
+      const [askEn, askAr] = tpl(L, 'ask');
+      const ask = () => say(fill(askEn, target), fill(askAr, target));
       $('#replayQ').addEventListener('click', ask);
       main.querySelectorAll('.choice').forEach((c) => c.addEventListener('click', async () => {
         if (locked) return;
@@ -907,7 +933,7 @@
           sfx.good();
           robotMood('happy', 900);
           const [en, ar] = pick(PRAISE);
-          await say(`${en} It is ${target.phrase}!`, ar, { arabic: false });
+          await say(`${en} ${fill(tpl(L, 'right'), target)}`, ar, { arabic: false });
           await wait(300);
           if (!main.contains(c)) return; // left the screen
           i++;
@@ -917,7 +943,8 @@
           c.classList.remove('wrong'); void c.offsetWidth; c.classList.add('wrong');
           sfx.bad();
           const w = L.words.find((x) => x.id === c.dataset.id);
-          say(`Oops! This is ${w.phrase}. Try again!`, `هذه صورة ${w.ar}. حاول مرة ثانية!`);
+          const [wEn, wAr] = tpl(L, 'wrong');
+          say(fill(wEn, w), fill(wAr, w));
         }
       }));
       ask();
@@ -993,10 +1020,10 @@
       const w = L.words.find((x) => x.id === step.word);
       const wrong = pick(L.words.filter((x) => x !== w));
       return {
-        robot: 'What is this?', ar: 'ما هذا؟', img: w.img, word: w,
+        robot: fill(tpl(L, 'picQ')[0], w), ar: fill(tpl(L, 'picQ')[1], w), img: w.img, word: w,
         replies: shuffle([
-          { en: `It is ${w.phrase}.`, ar: `صورة ${w.ar}`, correct: true, word: w },
-          { en: `It is ${wrong.phrase}.`, ar: `صورة ${wrong.ar}`, correct: false, word: wrong },
+          { en: fill(tpl(L, 'picA')[0], w), ar: fill(tpl(L, 'picA')[1], w), correct: true, word: w },
+          { en: fill(tpl(L, 'picA')[0], wrong), ar: fill(tpl(L, 'picA')[1], wrong), correct: false, word: wrong },
         ]),
       };
     };
@@ -1078,10 +1105,13 @@
         if (reply.correct) {
           robotMood('happy', 900);
           const [en, ar] = pick(PRAISE);
-          after = { en: `${en} It is ${w.phrase}!`, ar: `${ar} هذه صورة ${w.ar}.` };
+          after = { en: `${en} ${fill(tpl(L, 'picRight')[0], w)}`, ar: `${ar} ${fill(tpl(L, 'picRight')[1], w)}` };
         } else {
-          after = { en: `Good try! It is ${w.phrase}. Say: ${w.en}!`, ar: `محاولة جيدة! هذه صورة ${w.ar}، وبالإنجليزي: ${w.en}` };
+          after = { en: fill(tpl(L, 'picWrong')[0], w), ar: fill(tpl(L, 'picWrong')[1], w) };
         }
+      } else if (reply.after) {
+        // رد خاص بهذا الجواب (مثلاً تصحيح لطيف في القصة)
+        after = { en: reply.after, ar: reply.afterAr };
       } else if (step.after) {
         const n = name || spokenName();
         after = { en: step.after.replace('{name}', n ? `, ${n}` : ''), ar: step.afterAr };
@@ -1134,10 +1164,14 @@
   /* ---------- إكمال المستوى ---------- */
   function checkLevelComplete(L) {
     if (levelStars(L) < 3 || progress.celebrated.includes(L.id)) return;
-    progress.celebrated.push(L.id);
-    saveProgress();
+    const prof = progress;
     const next = getLevel(L.id + 1);
     setTimeout(() => {
+      // إن غادر الطفل المستوى أو بدّل الملف قبل الاحتفال، لا نغطي شاشته (سنحتفل في المرة القادمة)
+      if (progress !== prof || !location.hash.startsWith(`#/level/${L.id}`) || !overlay.hidden) return;
+      if (progress.celebrated.includes(L.id)) return;
+      progress.celebrated.push(L.id);
+      saveProgress();
       sfx.win();
       confetti(140);
       robotMood('happy', 1400);
@@ -1145,7 +1179,7 @@
         <div class="big-emoji">🏆</div>
         <h2>أنهيت المستوى ${L.id}!</h2>
         <div class="level-stars">⭐⭐⭐</div>
-        <p>${next ? (next.ready ? `فتحت المستوى ${next.id}: ${esc(next.titleAr)} ${next.icon}` : `المستوى ${next.id} (${esc(next.titleAr)} ${next.icon}) قادم قريباً! 🚧`) : 'أنهيت كل المستويات! 🎉'}</p>
+        <p>${next ? (next.ready ? `جرّب المستوى ${next.id}: ${esc(next.titleAr)} ${next.icon}` : `المستوى ${next.id} (${esc(next.titleAr)} ${next.icon}) قادم قريباً! 🚧`) : 'أنهيت كل المستويات! 🎉'}</p>
         <div class="btn-row"><button class="btn green" id="yay" type="button">🎉 رائع!</button></div>`);
       $('#yay').addEventListener('click', () => { closeSheet(); go('#/home'); });
       say('Hooray! You are a super star!', `مبروك! أنهيت المستوى ${L.id}. أنت نجم!`);
