@@ -1,4 +1,4 @@
-/* روبو يعلّمني الإنجليزي — منطق التطبيق (بدون مكتبات) */
+/* عمو أحمد يعلّمني الإنجليزي — منطق التطبيق (بدون مكتبات) */
 (() => {
   'use strict';
 
@@ -191,7 +191,7 @@
     $('.b-en', bubble).textContent = en || '';
     $('.b-ar', bubble).textContent = ar || '';
   }
-  /** روبو يقول جملة بالإنجليزي، ثم (اختيارياً) الشرح بالعربي. يُرجع false إذا قوطِع. */
+  /** عمو أحمد يقول جملة بالإنجليزي، ثم (اختيارياً) الشرح بالعربي. يُرجع false إذا قوطِع. */
   async function say(en, ar, opts = {}) {
     lastSay = { en, ar, opts };
     setBubble(en, ar);
@@ -461,7 +461,7 @@
     main.innerHTML = `
       <div class="splash screen">
         <div class="robot">${robotEl.innerHTML}</div>
-        <h1>روبو يعلّمني الإنجليزي<span class="en-text" dir="ltr">Robo English</span></h1>
+        <h1>عمو أحمد يعلّمني الإنجليزي<span class="en-text" dir="ltr">English with Uncle Ahmad</span></h1>
         <p>تعلّم، العب، وتكلّم مع صديقك الروبوت!</p>
         <button class="btn green" id="startBtn" type="button">▶ ابدأ</button>
       </div>`;
@@ -527,7 +527,7 @@
         <label class="field-label" for="nameInput">✍️ اكتب اسم الطفل</label>
         <input id="nameInput" class="name-input" type="text" maxlength="20" autocomplete="off" dir="auto"
           placeholder="مثلاً: سارة" value="${prof ? esc(prof.name) : ''}">
-        <div class="hint">💡 إذا كتبته بالإنجليزي (Sara) سيناديه روبو باسمه بصوته.</div>
+        <div class="hint">💡 إذا كتبته بالإنجليزي (Sara) سيناديه عمو أحمد باسمه بصوته.</div>
         <div class="field-label">🖼️ اختر صورتك</div>
         <div class="avatars">
           ${AVATARS.map((a) => `<button class="avatar-choice ${a === avatar ? 'on' : ''}" data-a="${a}" type="button" aria-label="${a}">${a}</button>`).join('')}
@@ -576,7 +576,7 @@
 
   let greetOnHome = true;
   function renderHome() {
-    setScreen('روبو يعلّمني الإنجليزي', true);
+    setScreen('عمو أحمد 🤖', true);
     const current = LEVELS.filter((L) => isUnlocked(L)).filter((L) => levelStars(L) < 3)[0];
     const tiles = LEVELS.map((L) => {
       const unlocked = isUnlocked(L);
@@ -631,7 +631,7 @@
     const acts = [
       { key: 'learn', ico: '🖼️', ar: 'تعلّم الكلمات', en: 'Learn', sub: `<bdi dir="ltr">${p.heard.length} / ${L.words.length}</bdi>`, c: '#FFE3E3' },
       { key: 'play', ico: '🎮', ar: 'العب وابحث', en: 'Play', sub: p.gameBest ? `أفضل نتيجة: <bdi dir="ltr">${p.gameBest} / ${L.words.length}</bdi>` : '', c: '#E3F4FF' },
-      { key: 'talk', ico: '💬', ar: 'تكلّم مع روبو', en: 'Talk', sub: '', c: '#E9FBEF' },
+      { key: 'talk', ico: '💬', ar: 'تكلّم مع عمو أحمد', en: 'Talk', sub: '', c: '#E9FBEF' },
     ];
     main.innerHTML = `
       <div class="screen">
@@ -794,7 +794,7 @@
       main.innerHTML = `
         <div class="screen">
           <div class="dots">${rounds.map((_, k) => `<span class="${k < i ? (results[k] ? 'ok' : 'miss') : k === i ? 'now' : ''}"></span>`).join('')}</div>
-          <div class="tip">👂 اسمع روبو، واضغط على الصورة الصحيحة!</div>
+          <div class="tip">👂 اسمع عمو أحمد، واضغط على الصورة الصحيحة!</div>
           <div class="choices">
             ${options.map((w) => `<button class="choice" data-id="${w.id}" type="button" aria-label="${esc(w.en)}">${w.img}</button>`).join('')}
           </div>
@@ -844,7 +844,7 @@
           <p class="tip">${score >= gameStarNeeded(L) ? 'رائع! حصلت على نجمة اللعبة ⭐' : `تحتاج ${gameStarNeeded(L)} إجابات صحيحة من أول مرة لتحصل على النجمة. حاول مرة ثانية! 💪`}</p>
           <div class="btn-row">
             <button class="btn orange" id="again" type="button">🔄 العب مرة أخرى</button>
-            <button class="btn green" id="toTalk" type="button">💬 تكلّم مع روبو</button>
+            <button class="btn green" id="toTalk" type="button">💬 تكلّم مع عمو أحمد</button>
           </div>
         </div>`;
       $('#again').addEventListener('click', () => renderGame(L));
@@ -857,12 +857,12 @@
     draw();
   }
 
-  /* ---------- المحادثة مع روبو ---------- */
+  /* ---------- المحادثة مع عمو أحمد ---------- */
   function renderChat(L) {
-    setScreen('تكلّم مع روبو 💬');
+    setScreen('المحادثة 💬');
     main.innerHTML = `
       <div class="screen">
-        <div class="tip">💡 روبو يسألك، وأنت تجيب: اضغط على الجواب، أو اضغط 🎤 وقله بصوتك!</div>
+        <div class="tip">💡 عمو أحمد يسألك، وأنت تجيب: اضغط على الجواب، أو اضغط 🎤 وقله بصوتك!</div>
         <div class="chat" id="chatLog"></div>
         <div class="replies" id="replies"></div>
       </div>`;
@@ -878,7 +878,7 @@
       const m = document.createElement('div');
       m.className = `msg ${who}`;
       m.innerHTML = `
-        <span class="who">${who === 'robot' ? '🤖 روبو' : '🧒 أنت'}</span>
+        <span class="who">${who === 'robot' ? '🤖 عمو أحمد' : '🧒 أنت'}</span>
         ${img ? `<span class="m-img">${img}</span>` : ''}
         <span class="m-en" dir="ltr">${esc(en)}</span>
         ${ar ? `<span class="m-ar">${esc(ar)}</span>` : ''}`;
@@ -1008,7 +1008,7 @@
       confetti(80);
       robotMood('happy', 1000);
       repliesEl.innerHTML = `
-        <div class="tip" style="text-align:center">🎉 أحسنت! أكملت المحادثة مع روبو وحصلت على نجمة ⭐</div>
+        <div class="tip" style="text-align:center">🎉 أحسنت! أكملت المحادثة مع عمو أحمد وحصلت على نجمة ⭐</div>
         <div class="btn-row">
           <button class="btn orange" id="chatAgain" type="button">🔄 مرة أخرى</button>
           <button class="btn green" id="chatBack" type="button">✅ تم</button>
@@ -1024,7 +1024,7 @@
   }
 
   function extractName(texts) {
-    const STOP = new Set(['is', 'am', 'my', 'name', 'i', 'im', "i'm", 'the', 'a', 'robo', 'hello', 'hi']);
+    const STOP = new Set(['is', 'am', 'my', 'name', 'i', 'im', "i'm", 'the', 'a', 'robo', 'uncle', 'ahmad', 'ahmed', 'hello', 'hi']);
     for (const t of texts) {
       const n = norm(t);
       const m = n.match(/(?:my name is|my name's|name is|i am|i'm|im|call me)\s+([a-z']+)/);
@@ -1062,7 +1062,7 @@
     const s = store.settings;
     const sheet = openSheet(`
       <h2>⚙️ الإعدادات</h2>
-      <button class="setting" data-k="arabicVoice" type="button"><span>🗣️ روبو يشرح بصوت عربي<br><small style="color:var(--muted)">${hasArabicVoice() ? '' : 'لا يوجد صوت عربي في هذا الجهاز، سيظهر الشرح مكتوباً'}</small></span><span class="switch ${s.arabicVoice ? 'on' : ''}"></span></button>
+      <button class="setting" data-k="arabicVoice" type="button"><span>🗣️ عمو أحمد يشرح بصوت عربي<br><small style="color:var(--muted)">${hasArabicVoice() ? '' : 'لا يوجد صوت عربي في هذا الجهاز، سيظهر الشرح مكتوباً'}</small></span><span class="switch ${s.arabicVoice ? 'on' : ''}"></span></button>
       <button class="setting" data-k="slow" type="button"><span>🐢 نطق إنجليزي بطيء</span><span class="switch ${s.slow ? 'on' : ''}"></span></button>
       <p style="text-align:start">👨‍👩‍👧 <b>للأهل:</b> الميكروفون يعمل في Chrome (أندرويد) و Safari (آيفون)، ويحتاج إنترنت للتعرّف على الصوت. التقدم محفوظ على هذا الجهاز فقط.</p>
       <div class="btn-row"><button class="btn white" id="resetBtn" type="button">🗑️ مسح نجوم ${esc(progress.name)} والبدء من جديد</button></div>
@@ -1073,7 +1073,7 @@
       $('.switch', b).classList.toggle('on', s[k]);
       saveProgress();
       sfx.tap();
-      if (k === 'slow') say('Hello! I am Robo.', '', { arabic: false });
+      if (k === 'slow') say('Hello! I am Uncle Ahmad.', '', { arabic: false });
     }));
     $('#resetBtn').addEventListener('click', () => {
       if (!confirm(`هل تريد مسح كل نجوم ${progress.name} وتقدّمه؟`)) return;
@@ -1108,10 +1108,10 @@
     } else if (isIOS()) {
       openSheet(`
         <div class="big-emoji">📲</div>
-        <h2>ثبّت روبو على الآيفون</h2>
+        <h2>ثبّت عمو أحمد على الآيفون</h2>
         <p>١. اضغط زر المشاركة <b>⬆️</b> في أسفل Safari</p>
         <p>٢. اختر <b>«إضافة إلى الشاشة الرئيسية»</b></p>
-        <p>٣. اضغط <b>«إضافة»</b> — وسيظهر روبو مع تطبيقاتك! 🤖</p>`);
+        <p>٣. اضغط <b>«إضافة»</b> — وسيظهر عمو أحمد مع تطبيقاتك! 🤖</p>`);
     }
   }
 
