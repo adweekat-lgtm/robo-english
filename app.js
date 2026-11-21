@@ -411,6 +411,14 @@
     return '#/home';
   }
   $('#backBtn').addEventListener('click', () => { sfx.tap(); go(parentOf(location.hash)); });
+  // إن كانت index.html قديمة من الكاش وليس فيها زر الطفل، ننشئه (حتى لا يتوقف التطبيق)
+  if (!$('#profileBtn')) {
+    const pb = document.createElement('button');
+    pb.id = 'profileBtn';
+    pb.className = 'icon-btn profile-btn';
+    pb.type = 'button';
+    $('.topbar').appendChild(pb);
+  }
   $('#profileBtn').addEventListener('click', () => { sfx.tap(); go('#/profiles'); });
   window.addEventListener('hashchange', route);
 
@@ -1113,4 +1121,5 @@
 
   updateStarCount();
   route();
+  window.__roboReady = true;
 })();
