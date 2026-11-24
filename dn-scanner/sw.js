@@ -1,16 +1,11 @@
 /* Service Worker: the app works fully offline after the first open.
  * When you change any file, bump VERSION (and VERSION in app.js). */
-const VERSION = 'dn-v2';
-const SHELL = ['./', './index.html', './styles.css', './app.js', './xlsx.js', './manifest.webmanifest',
+const VERSION = 'dn-v3';
+const SHELL = ['./', './index.html', './styles.css', './app.js', './xlsx.js', './digits.js', './templates.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
-// Large OCR engine files: they never change for a given VERSION -> cache first.
-const VENDOR = ['./vendor/tesseract.min.js', './vendor/worker.min.js',
-  './vendor/core/tesseract-core-simd-lstm.wasm.js', './vendor/core/tesseract-core-lstm.wasm.js',
-  './vendor/lang/eng.traineddata.gz'];
-
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION)
-    .then((c) => c.addAll([...SHELL, ...VENDOR].map((u) => new Request(u, { cache: 'reload' }))))
+    .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
     .then(() => self.skipWaiting()));
 });
 
@@ -25,17 +20,6 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-
-  if (url.pathname.includes('/vendor/')) {
-    e.respondWith(caches.open(VERSION).then(async (cache) => {
-      const hit = await cache.match(req, { ignoreSearch: true });
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) cache.put(req, res.clone());
-      return res;
-    }));
-    return;
-  }
 
   // App files: network first (3 s), then cache - avoids mixing old and new versions.
   e.respondWith((async () => {

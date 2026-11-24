@@ -1,10 +1,13 @@
 /* ماسح السندات - reads the printed invoice number on a Delivery Note with the phone
- * camera (offline OCR, Tesseract.js bundled in vendor/) and keeps a list for Excel. */
+ * camera (digits.js: offline recogniser for the dot-matrix Arabic-Indic digits) and keeps
+ * a list for Excel. */
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v2';          // keep in sync with sw.js
+  const VERSION = 'dn-v3';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
+  const LEARN_KEY = 'dn-scanner-learned';
+  const LEARN_MAX = 500;
   const $ = (id) => document.getElementById(id);
 
   // ---------------------------------------------------------------- state
@@ -134,6 +137,7 @@
       const v = cleanManual(prompt('تعديل رقم الفاتورة:', n));
       if (!v) return;
       if (v !== n && has(v)) { alert('هذا الرقم موجود في القائمة.'); return; }
+      if (v !== n && readsByNumber[n]) learn(readsByNumber[n], v);
       state.scans[idx].n = v;
       state.scans[idx].src = 'manual';
     }
@@ -147,32 +151,36 @@
     const v = cleanManual(inp.value);
     if (v.length < 5) { showResult('err', 'اكتب رقم الفاتورة كاملاً'); return; }
     unlockAudio();
+    if (lastRead && Date.now() - lastRead.at < 8000) learn(lastRead.glyphs, v);
     if (add(v, 'manual')) inp.value = '';
   });
 
-  // ---------------------------------------------------------------- OCR
-  let worker = null;
-  let ocrPromise = null;
-  function initOcr() {
-    if (ocrPromise) return ocrPromise;
-    ocrPromise = (async () => {
-      if (!window.Tesseract) throw new Error('OCR library missing');
-      const base = new URL('vendor/', location.href).href;
-      const w = await Tesseract.createWorker('eng', 1, {
-        workerPath: base + 'worker.min.js',
-        corePath: base + 'core',
-        langPath: base + 'lang',
-        gzip: true,
-      });
-      await w.setParameters({
-        tessedit_char_whitelist: 'DN0123456789',
-        tessedit_pageseg_mode: '7', // single text line
-      });
-      worker = w;
-      return w;
-    })();
-    ocrPromise.catch(() => { ocrPromise = null; });
-    return ocrPromise;
+  // ---------------------------------------------------------------- digit recogniser
+  // digits.js reads the dot-matrix Arabic-Indic digits. Templates = shipped (from real
+  // DN photos) + learned on this phone whenever the user types or corrects a number.
+  let templates = [];
+  let learned = [];
+  function loadTemplates() {
+    try { learned = JSON.parse(localStorage.getItem(LEARN_KEY)) || []; } catch (e) { learned = []; }
+    const base = (window.DN_TEMPLATES || []).map(DNDigits.unpackTemplate);
+    templates = base.concat(learned.map(DNDigits.unpackTemplate));
+  }
+  function learn(glyphs, number) {
+    if (!glyphs || !glyphs.length) return false;
+    // Keep only glyphs that can be digits (drop D, N and punctuation), then align.
+    let g = glyphs.filter((x) => x.l !== 'D' && x.l !== 'N' && x.l !== 'x');
+    if (g.length !== number.length) {
+      const all = glyphs.filter((x) => x.l !== 'x');
+      if (all.length === number.length + 2) g = all.slice(2);      // "DN" + digits
+      else if (all.length === number.length) g = all;
+      else return false;
+    }
+    g.forEach((x, i) => learned.push(DNDigits.packTemplate(number[i], x.f)));
+    if (learned.length > LEARN_MAX) learned = learned.slice(-LEARN_MAX);
+    try { localStorage.setItem(LEARN_KEY, JSON.stringify(learned)); } catch (e) { /* full */ }
+    loadTemplates();
+    setTimeout(() => { $('ocrLive').textContent = '🧠 تعلّم القارئ من هذا السند'; }, 50);
+    return true;
   }
 
   const crop = document.createElement('canvas');
@@ -193,32 +201,15 @@
     let sh = fr.height / scale;
     sx = Math.max(0, sx); sy = Math.max(0, sy);
     sw = Math.min(vw - sx, sw); sh = Math.min(vh - sy, sh);
-    const outH = 110;
-    const outW = Math.min(1400, Math.round(sw * outH / sh));
+    const outH = 160;
+    const outW = Math.min(2000, Math.round(sw * outH / sh));
     crop.width = outW;
     crop.height = outH;
     cctx.drawImage(video, sx, sy, sw, sh, 0, 0, outW, outH);
-    // grayscale + contrast stretch (2%..98%) - helps with faded thermal print
-    const img = cctx.getImageData(0, 0, outW, outH);
-    const d = img.data;
-    const hist = new Uint32Array(256);
-    for (let i = 0; i < d.length; i += 4) {
-      const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0;
-      d[i] = g;
-      hist[g]++;
-    }
-    const total = outW * outH;
-    let lo = 0, hi = 255, acc = 0;
-    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc > total * 0.02) { lo = v; break; } }
-    acc = 0;
-    for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc > total * 0.02) { hi = v; break; } }
-    const span = Math.max(1, hi - lo);
-    for (let i = 0; i < d.length; i += 4) {
-      const g = Math.max(0, Math.min(255, (d[i] - lo) * 255 / span));
-      d[i] = d[i + 1] = d[i + 2] = g;
-    }
-    cctx.putImageData(img, 0, 0);
-    return crop;
+    const d = cctx.getImageData(0, 0, outW, outH).data;
+    const gray = new Uint8Array(outW * outH);
+    for (let i = 0, j = 0; j < gray.length; i += 4, j++) gray[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+    return { w: outW, h: outH, data: gray };
   }
 
   // ---------------------------------------------------------------- scan loop
@@ -229,25 +220,26 @@
   let lastHit = { n: null, seen: 0 };
   let wakeLock = null;
 
+  let lastRead = null;        // most recent read with glyphs (for learning)
+  const readsByNumber = {};   // number -> glyphs it was read from (to learn from corrections)
+
   async function scanLoop() {
     while (running) {
-      if (!paused && worker && $('video').readyState >= 2) {
-        const c = grab();
-        if (c) {
-          try {
-            const { data } = await worker.recognize(c);
-            handleRead(data.text || '');
-          } catch (e) { /* skip frame */ }
+      if (!paused && $('video').readyState >= 2) {
+        const g = grab();
+        if (g) {
+          try { handleRead(DNDigits.read(g, templates, Number(state.settings.len) || 0)); } catch (e) { /* skip frame */ }
         }
       }
-      await new Promise((r) => setTimeout(r, 40));
+      await new Promise((r) => setTimeout(r, 30));
     }
   }
 
-  function handleRead(text) {
-    const raw = text.replace(/\s+/g, ' ').trim();
-    $('ocrLive').textContent = raw ? '👁 ' + raw.slice(0, 40) : '';
-    const n = extract(text);
+  function handleRead(r) {
+    if (r.glyphs.length >= 6) lastRead = { glyphs: r.glyphs, at: Date.now() };
+    const live = r.text.replace(/\./g, '');
+    if (!$('ocrLive').textContent.startsWith('🧠') || live) $('ocrLive').textContent = live ? '👁 ' + live + (r.inv && !r.sure ? ' ?' : '') : '';
+    const n = r.inv && r.sure ? r.inv : null;
     const now = Date.now();
     recent.push(n);
     if (recent.length > 3) recent.shift();
@@ -258,6 +250,7 @@
     if (state.settings.confirm && votes < 2) return;
     lastHit = { n, seen: now };
     recent = [];
+    readsByNumber[n] = r.glyphs;
     add(n, 'cam');
   }
 
@@ -274,8 +267,7 @@
       return;
     }
     $('btnStart').hidden = true;
-    showResult('idle', '⏳ جاري تشغيل الكاميرا وتجهيز القارئ…');
-    const ocr = initOcr();
+    showResult('idle', '⏳ جاري تشغيل الكاميرا…');
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -292,10 +284,8 @@
     video.srcObject = stream;
     try { await video.play(); } catch (e) { /* autoplay muted is allowed */ }
     setupTrackTools(stream.getVideoTracks()[0]);
-    try {
-      await ocr;
-    } catch (e) {
-      camError('تعذّر تجهيز قارئ الأرقام. افتح التطبيق مرة واحدة مع الإنترنت ليُحمَّل، ثم يعمل بدونه.');
+    if (!window.DNDigits || !templates.length) {
+      camError('تعذّر تجهيز قارئ الأرقام. أغلق التطبيق وافتحه مرة ثانية مع الإنترنت.');
       stopCamera();
       $('btnStart').hidden = false;
       return;
@@ -304,7 +294,7 @@
     paused = false;
     $('btnPause').hidden = false;
     $('btnPause').textContent = '⏸';
-    showResult('idle', 'وجّه الكاميرا على رقم الفاتورة');
+    showResult('idle', 'ضع سطر رقم السند (DN) داخل الإطار');
     requestWakeLock();
     scanLoop();
   }
@@ -459,6 +449,8 @@
     $('setLen').value = state.settings.len;
     $('setSound').checked = state.settings.sound;
     $('setConfirm').checked = state.settings.confirm;
+    const lc = $('learnCount');
+    if (lc) lc.textContent = String(learned.length);
     $('settings').showModal();
   });
   $('settings').addEventListener('close', () => {
@@ -473,11 +465,18 @@
     save();
   });
   $('ver').textContent = VERSION;
+  const resetBtn = $('btnResetLearn');
+  if (resetBtn) resetBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!confirm('مسح كل ما تعلّمه القارئ على هذا الجهاز؟')) return;
+    learned = [];
+    try { localStorage.removeItem(LEARN_KEY); } catch (err) { /* ignore */ }
+    loadTemplates();
+    $('learnCount').textContent = '0';
+  });
 
   render();
-  // Warm up the OCR engine in the background so the first scan is instant.
-  if (window.requestIdleCallback) requestIdleCallback(() => initOcr().catch(() => {}));
-  else setTimeout(() => initOcr().catch(() => {}), 500);
+  loadTemplates();
 
-  window.__dn = { extract, add, state: () => state, grab, handleRead };
+  window.__dn = { extract, add, state: () => state, grab, handleRead, learned: () => learned.length, templates: () => templates.length };
 })();
