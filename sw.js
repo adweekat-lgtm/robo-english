@@ -1,6 +1,6 @@
 /* Service Worker: يجعل التطبيق يعمل بدون إنترنت بعد أول فتح.
  * عند تعديل أي ملف في التطبيق: غيّر رقم VERSION ليحصل الأطفال على النسخة الجديدة. */
-const VERSION = 'robo-v8';
+const VERSION = 'robo-v9';
 const SHELL = [
   './',
   './index.html',
@@ -50,6 +50,8 @@ self.addEventListener('fetch', (e) => {
   }
 
   if (url.origin !== self.location.origin) return;
+  // ماسح السندات تطبيق منفصل في مجلد dn-scanner/ وله Service Worker خاص به
+  if (url.pathname.includes('/dn-scanner/')) return;
 
   // ملفات التطبيق: الشبكة أولاً (ليحصل الأطفال دائماً على آخر نسخة متطابقة)،
   // وإن لم يوجد إنترنت أو تأخر الرد أكثر من 4 ثوانٍ نستخدم الكاش.
