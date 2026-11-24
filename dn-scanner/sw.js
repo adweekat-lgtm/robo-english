@@ -1,6 +1,6 @@
 /* Service Worker: the app works fully offline after the first open.
  * When you change any file, bump VERSION (and VERSION in app.js). */
-const VERSION = 'dn-v1';
+const VERSION = 'dn-v2';
 const SHELL = ['./', './index.html', './styles.css', './app.js', './xlsx.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
 // Large OCR engine files: they never change for a given VERSION -> cache first.

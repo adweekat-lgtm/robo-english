@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v1';          // keep in sync with sw.js
+  const VERSION = 'dn-v2';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const $ = (id) => document.getElementById(id);
 
@@ -25,7 +25,7 @@
 
   // ---------------------------------------------------------------- number parsing
   function extract(text) {
-    const t = String(text || '').toUpperCase();
+    const t = toAscii(text).toUpperCase();
     const L = Number(state.settings.len) || 0;
     const ok = (r) => (L > 0 ? r.length === L : r.length >= 8 && r.length <= 14);
     const pick = (runs) => {
@@ -38,8 +38,12 @@
     return pick(t.match(/\d+/g) || []) ||
       pick(t.replace(/(\d)\s+(?=\d)/g, '$1').match(/\d+/g) || []); // OCR may insert spaces
   }
+  // Arabic-Indic (٠-٩) and Persian (۰-۹) digits -> 0-9 (Arabic keyboards type these)
+  function toAscii(v) {
+    return String(v || '').replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) & 0xf));
+  }
   function cleanManual(v) {
-    return String(v || '').toUpperCase().replace(/^\s*DN/, '').replace(/[^\d]/g, '');
+    return toAscii(v).toUpperCase().replace(/^\s*DN/, '').replace(/[^0-9]/g, '');
   }
 
   // ---------------------------------------------------------------- UI helpers
