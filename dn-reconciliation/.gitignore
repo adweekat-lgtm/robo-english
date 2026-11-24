@@ -1,0 +1,11 @@
+# Never commit real company data
+*.xlsx
+*.xls
+*.pdf
+*.jpg
+*.jpeg
+*.png
+scans/
+output/
+samples/
+__pycache__/
