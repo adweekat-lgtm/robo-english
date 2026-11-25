@@ -28,6 +28,8 @@
       <input id="zoom" type="range" hidden aria-label="تقريب">
       <button id="btnPause" class="icon" hidden aria-label="إيقاف مؤقت">⏸</button>
     </div>
+    <div id="focusRing" class="focusRing" hidden></div>
+    <button id="btnShot" class="shot" hidden aria-label="التقاط">📸</button>
     <button id="btnStart" class="start">▶ تشغيل الكاميرا</button>
     <div id="camMsg" class="camMsg" hidden></div>
   </section>
@@ -35,10 +37,29 @@
   <div id="result" class="result idle">جاهز</div>
   <div id="ocrLive" class="ocrLive" dir="ltr"></div>
 
+  <div id="confirmBox" class="confirmBox" hidden>
+    <div>هل هذا هو رقم السند؟</div>
+    <b id="confirmNum" dir="ltr"></b>
+    <div class="row3">
+      <button id="confirmYes" class="primary">✅ نعم، أضفه</button>
+      <button id="confirmEdit">✏️ تعديل</button>
+      <button id="confirmNo">✕</button>
+    </div>
+  </div>
+
   <form id="manual" class="manual" autocomplete="off">
     <input id="manualInput" inputmode="numeric" placeholder="أو اكتب الرقم يدوياً" dir="ltr">
     <button type="submit">إضافة</button>
   </form>
+
+  <button id="btnNative" class="native" type="button">📷 صوّر بكاميرا الجوال (للجوالات الضعيفة)</button>
+  <input id="nativeCam" type="file" accept="image/*" capture="environment" hidden>
+
+  <div id="photoView" class="photoView" hidden>
+    <p>المس رقم السند (DN) في الصورة</p>
+    <canvas id="photoCanvas"></canvas>
+    <button id="photoClose" type="button">إلغاء</button>
+  </div>
 
   <div class="actions">
     <button id="btnExport" class="primary">📊 تصدير Excel</button>

@@ -120,8 +120,8 @@
   // ------------------------------------------------------------------ segmentation
   /* Returns { glyphs: [{x0,x1,y0,y1,f:Float32Array}], band:{top,bottom} } for the
    * text line with the most characters in the image. */
-  function segment(gray) {
-    const img = resizeGray(gray, WORK_H);
+  function segment(gray, workH = WORK_H) {
+    const img = resizeGray(gray, workH);
     const { w, h } = img;
     const ink = binarize(img);
     const dil = dilate(ink, w, h, 2);
@@ -146,11 +146,11 @@
     }
     const score = (L) => L.items.length - 3 * Math.abs((L.y0 + L.y1) / 2 - h / 2) / h; // prefer centre
     lines.sort((a, b) => score(b) - score(a));
-    const out = lines.filter((L) => L.items.length >= 3).slice(0, 3).map((L) => lineGlyphs(L.items, ink, dil, w));
+    const out = lines.filter((L) => L.items.length >= 3).slice(0, 3).map((L) => lineGlyphs(L.items, ink, dil, w, h));
     return { lines: out, glyphs: out.length ? out[0].glyphs : [], img, dil };
   }
 
-  function lineGlyphs(items, ink, dil, w) {
+  function lineGlyphs(items, ink, dil, w, h) {
     // Line band from the taller glyphs (digits like ١٢٣ reach full height).
     const hs = items.map((c) => c.y1 - c.y0).sort((a, b) => b - a);
     const H = Math.max(6, hs[Math.floor((hs.length - 1) / 3)]);
@@ -217,7 +217,9 @@
       f[G * G + 1] = (c.y1 - c.y0) / BH;  // height
       return { x0: c.x0, x1: c.x1, y0: c.y0, y1: c.y1, f };
     });
-    return { glyphs, band: { top, bottom } };
+    // A line cut by the top/bottom of the picture has truncated digits: never trust it.
+    const clipped = merged.some((c) => (c.y0 <= 0 || c.y1 >= h) && c.y1 - c.y0 >= 0.5 * BH);
+    return { glyphs, band: { top, bottom }, clipped, BH };
   }
 
   // ------------------------------------------------------------------ classification
@@ -254,15 +256,20 @@
   /* Read the text: tries the best few lines and returns the first that contains an
    * invoice number. text uses 0-9, D, N and '.' for punctuation/noise.
    * sure = every digit was recognised with confidence ratio >= minRatio. */
-  function read(gray, templates, len, minRatio = 1.2) {
-    const seg = segment(gray);
+  function read(gray, templates, len, minRatio = 1.2, workH = WORK_H) {
+    const seg = segment(gray, workH);
     let first = null;
     for (const line of seg.lines) {
       const glyphs = line.glyphs.map((g) => ({ ...g, ...classify(g.f, templates) }));
-      const text = glyphs.map((g) => (g.l === 'x' ? '.' : g.l)).join('');
+      // A wide gap (e.g. between the number and the Arabic label) ends the number.
+      let text = '';
+      glyphs.forEach((g, i) => {
+        if (i && g.x0 - glyphs[i - 1].x1 > 1.2 * line.BH) text += ' ';
+        text += g.l === 'x' ? '.' : g.l;
+      });
       const inv = invoiceFrom(text, len);
       const digits = glyphs.filter((g) => /\d/.test(g.l));
-      const sure = digits.every((g) => g.ratio >= minRatio);
+      const sure = !line.clipped && digits.every((g) => g.ratio >= minRatio);
       const r = { text, glyphs, inv, sure };
       if (inv) return r;
       if (!first) first = r;
@@ -272,7 +279,7 @@
 
   // Pull the invoice number out of a read: digits after "DN", else the longest digit run.
   function invoiceFrom(text, len) {
-    const t = text.replace(/\./g, '');
+    const t = text;
     const m = t.match(/D?N(\d+)/);
     const cands = [];
     if (m) cands.push(m[1]);
