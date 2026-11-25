@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v3';          // keep in sync with sw.js
+  const VERSION = 'dn-v4';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const LEARN_KEY = 'dn-scanner-learned';
   const LEARN_MAX = 500;
@@ -185,31 +185,48 @@
 
   const crop = document.createElement('canvas');
   const cctx = crop.getContext('2d', { willReadFrequently: true });
-  function grab() {
+  // The on-screen frame as a fraction (0..1) of the video picture (video uses object-fit: cover).
+  function frameNorm() {
     const video = $('video');
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
+    const vw = video.videoWidth, vh = video.videoHeight;
     if (!vw || !vh) return null;
     const vr = video.getBoundingClientRect();
     const fr = $('frame').getBoundingClientRect();
-    const scale = Math.max(vr.width / vw, vr.height / vh); // object-fit: cover
+    const scale = Math.max(vr.width / vw, vr.height / vh);
     const offX = (vr.width - vw * scale) / 2;
     const offY = (vr.height - vh * scale) / 2;
-    let sx = (fr.left - vr.left - offX) / scale;
-    let sy = (fr.top - vr.top - offY) / scale;
-    let sw = fr.width / scale;
-    let sh = fr.height / scale;
+    return {
+      x: (fr.left - vr.left - offX) / scale / vw,
+      y: (fr.top - vr.top - offY) / scale / vh,
+      w: fr.width / scale / vw,
+      h: fr.height / scale / vh,
+    };
+  }
+
+  // Crop a region (pixels of src) into a gray image about outH pixels high.
+  function cropGray(src, sx, sy, sw, sh, outH = 160) {
+    const W = src.videoWidth || src.naturalWidth || src.width, H = src.videoHeight || src.naturalHeight || src.height;
     sx = Math.max(0, sx); sy = Math.max(0, sy);
-    sw = Math.min(vw - sx, sw); sh = Math.min(vh - sy, sh);
-    const outH = 160;
-    const outW = Math.min(2000, Math.round(sw * outH / sh));
+    sw = Math.min(W - sx, sw); sh = Math.min(H - sy, sh);
+    if (sw < 8 || sh < 8) return null;
+    const outW = Math.min(2400, Math.round(sw * outH / sh));
     crop.width = outW;
     crop.height = outH;
-    cctx.drawImage(video, sx, sy, sw, sh, 0, 0, outW, outH);
+    cctx.drawImage(src, sx, sy, sw, sh, 0, 0, outW, outH);
     const d = cctx.getImageData(0, 0, outW, outH).data;
     const gray = new Uint8Array(outW * outH);
     for (let i = 0, j = 0; j < gray.length; i += 4, j++) gray[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
     return { w: outW, h: outH, data: gray };
+  }
+
+  // Crop the frame region; grow = extra height around the frame (1 = frame only).
+  function grab(grow = 1) {
+    const video = $('video');
+    const n = frameNorm();
+    if (!n) return null;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const h = n.h * grow, y = n.y - (h - n.h) / 2;
+    return cropGray(video, n.x * vw, y * vh, n.w * vw, h * vh, Math.round(160 * grow));
   }
 
   // ---------------------------------------------------------------- scan loop
@@ -236,6 +253,7 @@
   }
 
   function handleRead(r) {
+    if (confirmOpen) return;
     if (r.glyphs.length >= 6) lastRead = { glyphs: r.glyphs, at: Date.now() };
     const live = r.text.replace(/\./g, '');
     if (!$('ocrLive').textContent.startsWith('🧠') || live) $('ocrLive').textContent = live ? '👁 ' + live + (r.inv && !r.sure ? ' ?' : '') : '';
@@ -294,7 +312,8 @@
     paused = false;
     $('btnPause').hidden = false;
     $('btnPause').textContent = '⏸';
-    showResult('idle', 'ضع سطر رقم السند (DN) داخل الإطار');
+    if ($('btnShot')) $('btnShot').hidden = false;
+    showResult('idle', 'ضع سطر رقم السند (DN) داخل الإطار، أو اضغط 📸');
     requestWakeLock();
     scanLoop();
   }
@@ -307,6 +326,8 @@
     $('btnTorch').hidden = true;
     $('zoom').hidden = true;
     $('btnPause').hidden = true;
+    if ($('btnShot')) $('btnShot').hidden = true;
+    camTrack = null;
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   }
 
@@ -317,8 +338,219 @@
     showResult('err', text);
   }
 
+  // ---------------------------------------------------------------- 📸 capture / confirm / phone camera
+  let camTrack = null;
+  let shotBusy = false;
+  let confirmOpen = false;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const invLen = () => Number(state.settings.len) || 0;
+  // grow = crop height relative to the frame: keep the digits the same size for the reader.
+  function tryRead(gray, grow = 1) {
+    if (!gray) return null;
+    try { return DNDigits.read(gray, templates, invLen(), 1.2, Math.round(96 * grow)); } catch (e) { return null; }
+  }
+  const mode = (arr) => {
+    const c = {};
+    arr.forEach((x) => { c[x] = (c[x] || 0) + 1; });
+    return Object.keys(c).sort((a, b) => c[b] - c[a])[0];
+  };
+
+  // The video shows the centre of the camera picture; map the frame into a full photo.
+  function photoRegion(pw, ph, videoAspect, n, grow) {
+    let fx0 = 0, fy0 = 0, fw = pw, fh = ph;
+    if (videoAspect > pw / ph) { fh = pw / videoAspect; fy0 = (ph - fh) / 2; } else { fw = ph * videoAspect; fx0 = (pw - fw) / 2; }
+    const h = n.h * grow, y = n.y - (h - n.h) / 2;
+    return [fx0 + n.x * fw, fy0 + y * fh, n.w * fw, h * fh];
+  }
+
+  async function takeShot() {
+    if (shotBusy || !stream) return;
+    unlockAudio();
+    shotBusy = true;
+    const wasPaused = paused;
+    paused = true;                       // the live loop must not add while we decide
+    const btn = $('btnShot');
+    if (btn) btn.disabled = true;
+    showResult('idle', '📸 جاري القراءة…');
+    const reads = [];
+    try {
+      // 1) Full-resolution still photo where the browser supports it (Android Chrome).
+      if (window.ImageCapture && camTrack) {
+        try {
+          const ic = new ImageCapture(camTrack);
+          const blob = await Promise.race([ic.takePhoto(), sleep(2500).then(() => { throw new Error('timeout'); })]);
+          const bmp = await createImageBitmap(blob);
+          const video = $('video');
+          const n = frameNorm();
+          if (n) {
+            for (const g of [1, 2]) {
+              const r = photoRegion(bmp.width, bmp.height, video.videoWidth / video.videoHeight, n, g);
+              reads.push(tryRead(cropGray(bmp, r[0], r[1], r[2], r[3], Math.round(160 * g)), g));
+            }
+          }
+          if (bmp.close) bmp.close();
+        } catch (e) { /* not supported or failed: use video frames */ }
+      }
+      // 2) A short burst of video frames.
+      for (let i = 0; i < 6; i++) {
+        reads.push(tryRead(grab(1)), tryRead(grab(2), 2));
+        await sleep(70);
+      }
+    } finally {
+      paused = wasPaused;
+      shotBusy = false;
+      if (btn) btn.disabled = false;
+    }
+    decide(reads.filter(Boolean));
+  }
+
+  // Sure and agreed -> add. Read but unsure -> ask the user. Nothing -> explain.
+  function decide(reads) {
+    const sure = reads.filter((r) => r.inv && r.sure);
+    if (sure.length) {
+      const n = mode(sure.map((r) => r.inv));
+      const agree = sure.filter((r) => r.inv === n).length;
+      const g = sure.find((r) => r.inv === n).glyphs;
+      // Another number also read with confidence twice or more -> let the user decide.
+      const rival = sure.some((r) => r.inv !== n && sure.filter((x) => x.inv === r.inv).length >= 2);
+      if (!rival && (agree >= 2 || !state.settings.confirm)) {
+        readsByNumber[n] = g;
+        lastHit = { n, seen: Date.now() };
+        add(n, 'cam');
+        return;
+      }
+      askConfirm(n, g);
+      return;
+    }
+    const cand = reads.filter((r) => r.inv);
+    if (cand.length) {
+      const n = mode(cand.map((r) => r.inv));
+      askConfirm(n, cand.find((r) => r.inv === n).glyphs);
+      return;
+    }
+    const any = reads.find((r) => r.glyphs.length >= 6);
+    if (any) lastRead = { glyphs: any.glyphs, at: Date.now() };   // typing the number now teaches the reader
+    showResult('err', 'لم أستطع قراءة الرقم<small>قرّب الجوال قليلاً أو شغّل الفلاش 🔦، أو اكتب الرقم يدوياً (سيتعلّم القارئ)</small>');
+    beep(300, 150);
+  }
+
+  let pending = null;
+  function askConfirm(n, glyphs) {
+    const box = $('confirmBox');
+    if (!box) {                                   // older page without the box
+      if (confirm(`هل الرقم ${n} صحيح؟`)) { learn(glyphs, n); add(n, 'cam'); }
+      return;
+    }
+    pending = { n, glyphs };
+    confirmOpen = true;
+    $('confirmNum').textContent = n;
+    box.hidden = false;
+    showResult('idle', 'تأكد من الرقم ↓');
+    beep(700, 100);
+  }
+  function closeConfirm() {
+    const box = $('confirmBox');
+    if (box) box.hidden = true;
+    confirmOpen = false;
+    pending = null;
+  }
+  function onConfirm(act) {
+    if (!pending) return closeConfirm();
+    const { n, glyphs } = pending;
+    closeConfirm();
+    if (act === 'yes') {
+      learn(glyphs, n);
+      readsByNumber[n] = glyphs;
+      lastHit = { n, seen: Date.now() };
+      add(n, 'cam');
+    } else if (act === 'edit') {
+      const v = cleanManual(prompt('اكتب رقم الفاتورة الصحيح:', n));
+      if (!v) return;
+      learn(glyphs, v);
+      lastHit = { n: v, seen: Date.now() };
+      add(v, 'manual');
+    } else {
+      showResult('idle', 'وجّه الكاميرا على سطر DN واضغط 📸');
+    }
+  }
+
+  // Phone's own camera app (sharper on weak phones): take a photo, then tap the DN number.
+  let nativeImg = null;
+  function openNativePhoto(file) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      nativeImg = img;
+      const cv = $('photoCanvas');
+      const maxW = Math.min(window.innerWidth, 900);
+      const sc = maxW / img.naturalWidth;
+      cv.width = Math.round(img.naturalWidth * sc);
+      cv.height = Math.round(img.naturalHeight * sc);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      $('photoView').hidden = false;
+    };
+    img.onerror = () => showResult('err', 'تعذّر فتح الصورة');
+    img.src = url;
+  }
+  function readAtTap(e) {
+    if (!nativeImg) return;
+    const cv = $('photoCanvas');
+    const r = cv.getBoundingClientRect();
+    const W = nativeImg.naturalWidth, H = nativeImg.naturalHeight;
+    const ix = (e.clientX - r.left) / r.width * W;
+    const iy = (e.clientY - r.top) / r.height * H;
+    const reads = [];
+    for (const hf of [0.02, 0.03, 0.045, 0.065]) {
+      for (const wf of [0.35, 0.45, 0.6]) {
+        const h = hf * H, w = wf * W;
+        reads.push(tryRead(cropGray(nativeImg, ix - w / 2, iy - h / 2, w, h, 160)));
+      }
+    }
+    closePhoto();
+    unlockAudio();
+    decide(reads.filter(Boolean));
+  }
+  function closePhoto() {
+    $('photoView').hidden = true;
+    if (nativeImg) URL.revokeObjectURL(nativeImg.src);
+    nativeImg = null;                               // the photo is not kept
+  }
+
+  // Tap on the live picture -> focus there (where the phone supports it).
+  function tapFocus(e) {
+    if (!camTrack || !camTrack.getCapabilities) return;
+    const caps = camTrack.getCapabilities();
+    const r = e.currentTarget.getBoundingClientRect();
+    const adv = { pointsOfInterest: [{ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }] };
+    if (caps.focusMode && caps.focusMode.includes('single-shot')) adv.focusMode = 'single-shot';
+    camTrack.applyConstraints({ advanced: [adv] }).catch(() => {});
+    if (caps.focusMode && caps.focusMode.includes('continuous')) {
+      setTimeout(() => camTrack && camTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {}), 2500);
+    }
+    const ring = $('focusRing');
+    if (ring) {
+      const cr = $('cam').getBoundingClientRect();
+      ring.style.left = (e.clientX - cr.left) + 'px';
+      ring.style.top = (e.clientY - cr.top) + 'px';
+      ring.hidden = false;
+      setTimeout(() => { ring.hidden = true; }, 700);
+    }
+  }
+
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on('btnShot', 'click', takeShot);
+  on('confirmYes', 'click', () => onConfirm('yes'));
+  on('confirmEdit', 'click', () => onConfirm('edit'));
+  on('confirmNo', 'click', () => onConfirm('no'));
+  on('btnNative', 'click', () => { const i = $('nativeCam'); if (i) i.click(); });
+  on('nativeCam', 'change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) openNativePhoto(f); });
+  on('photoCanvas', 'click', readAtTap);
+  on('photoClose', 'click', closePhoto);
+  on('video', 'click', tapFocus);
+
   let torchOn = false;
   function setupTrackTools(track) {
+    camTrack = track || null;
     if (!track || !track.getCapabilities) return;
     const caps = track.getCapabilities();
     const adv = [];
@@ -478,5 +710,5 @@
   render();
   loadTemplates();
 
-  window.__dn = { extract, add, state: () => state, grab, handleRead, learned: () => learned.length, templates: () => templates.length };
+  window.__dn = { decide, takeShot, askConfirm, extract, add, state: () => state, grab, handleRead, learned: () => learned.length, templates: () => templates.length };
 })();
