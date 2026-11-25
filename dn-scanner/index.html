@@ -22,7 +22,7 @@
 
   <section class="cam" id="cam">
     <video id="video" playsinline muted autoplay></video>
-    <div class="frame" id="frame"><span>ضع رقم الفاتورة داخل الإطار</span></div>
+    <div class="frame" id="frame"><span>ضع سطر رقم السند (DN) داخل الإطار</span></div>
     <div class="camTools">
       <button id="btnTorch" class="icon" hidden aria-label="الفلاش">🔦</button>
       <input id="zoom" type="range" hidden aria-label="تقريب">
@@ -36,7 +36,7 @@
   <div id="ocrLive" class="ocrLive" dir="ltr"></div>
 
   <form id="manual" class="manual" autocomplete="off">
-    <input id="manualInput" inputmode="numeric" pattern="[0-9DNdn ]*" placeholder="أو اكتب الرقم يدوياً" dir="ltr">
+    <input id="manualInput" inputmode="numeric" placeholder="أو اكتب الرقم يدوياً" dir="ltr">
     <button type="submit">إضافة</button>
   </form>
 
@@ -56,16 +56,20 @@
       </label>
       <label>عدد خانات رقم الفاتورة (بدون DN)
         <input id="setLen" type="number" min="0" max="20" inputmode="numeric">
-        <small>مثال: DN11893710039 ← 11 خانة. ضع 0 لقبول أي رقم من 8 إلى 14 خانة.</small>
+        <small>مثال: DN١٢٠٢٠٤٠٠٢٠٦ ← 11 خانة. ضع 0 لقبول أي رقم من 8 إلى 14 خانة.</small>
       </label>
       <label class="row"><input id="setSound" type="checkbox"> صوت عند القراءة</label>
       <label class="row"><input id="setConfirm" type="checkbox"> تأكيد بقراءتين متطابقتين (أدق)</label>
+      <p class="learn">🧠 تعلّم القارئ <bdi dir="ltr" id="learnCount">0</bdi> حرفاً من تصحيحاتك على هذا الجهاز.
+        <small>إذا لم يقرأ السند: اترك الكاميرا عليه واكتب الرقم يدوياً، أو صحّح رقماً خاطئاً بـ ✏️، فيتعلّم القارئ.</small>
+        <button id="btnResetLearn" type="button" class="danger">مسح ما تعلّمه</button></p>
       <p class="ver">الإصدار <bdi dir="ltr" id="ver"></bdi> · يعمل بدون إنترنت · البيانات على هذا الجهاز فقط</p>
       <menu><button value="ok" class="primary">حفظ</button></menu>
     </form>
   </dialog>
 
-  <script src="vendor/tesseract.min.js"></script>
+  <script src="digits.js"></script>
+  <script src="templates.js"></script>
   <script src="xlsx.js"></script>
   <script src="app.js"></script>
   <script>
