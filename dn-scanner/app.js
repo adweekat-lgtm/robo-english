@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v8';          // keep in sync with sw.js
+  const VERSION = 'dn-v9';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const LEARN_KEY = 'dn-scanner-learned';
   const LEARN_MAX = 500;
@@ -572,12 +572,14 @@
     // 1) Crop exactly around the line nearest the finger.
     const line = locateLine(nativeImg, ix, iy);
     if (line) {
+      // The finger may be on "DN" or on the last digits: also try crops shifted right/left.
+      const tries = [[0.45, 0], [0.6, 0], [0.35, 0], [0.5, 0.18], [0.5, -0.18], [0.6, 0.25], [0.6, -0.25]];
       for (const k of [2.6, 2.1, 3.3]) {
-        for (const wf of [0.45, 0.6, 0.35]) {
-          const h = k * line.lh, w = wf * W;
+        for (const [wf, dx] of tries) {
+          const h = k * line.lh, w = wf * W, cx = ix + dx * W;
           // Keep the printed line about 50 px tall for the reader (more detail = fewer mistakes).
           const workH = Math.round(50 * k);
-          const g = cropGray(nativeImg, ix - w / 2, line.cy - h / 2, w, h, Math.max(160, workH));
+          const g = cropGray(nativeImg, cx - w / 2, line.cy - h / 2, w, h, Math.max(160, workH));
           let rd = null;
           if (g) { try { rd = DNDigits.read(g, templates, invLen(), 1.2, workH); } catch (err) { rd = null; } }
           if (rd) reads.push(rd);
