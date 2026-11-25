@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v5';          // keep in sync with sw.js
+  const VERSION = 'dn-v6';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const LEARN_KEY = 'dn-scanner-learned';
   const LEARN_MAX = 500;
@@ -506,6 +506,50 @@
     img.onerror = () => { URL.revokeObjectURL(url); showResult('err', 'تعذّر فتح الصورة'); };
     img.src = url;
   }
+  // Find the printed line nearest to (ix, iy): dark-pixel profile of the rows around the tap.
+  // Returns { cy, lh } (centre and height of the line, in photo pixels) or null.
+  function locateLine(src, ix, iy) {
+    const W = src.width, H = src.height;
+    const x0 = Math.max(0, Math.round(ix - 0.3 * W)), x1 = Math.min(W, Math.round(ix + 0.3 * W));
+    const y0 = Math.max(0, Math.round(iy - 0.06 * H)), y1 = Math.min(H, Math.round(iy + 0.06 * H));
+    const rw = x1 - x0, rh = y1 - y0;
+    if (rw < 20 || rh < 20) return null;
+    crop.width = rw; crop.height = rh;
+    cctx.drawImage(src, x0, y0, rw, rh, 0, 0, rw, rh);
+    const d = cctx.getImageData(0, 0, rw, rh).data;
+    let mean = 0;
+    const g = new Float32Array(rw * rh);
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) { g[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; mean += g[j]; }
+    mean /= g.length;
+    const row = new Float32Array(rh);
+    let max = 0;
+    for (let y = 0; y < rh; y++) {
+      let n = 0;
+      for (let x = 0; x < rw; x++) if (g[y * rw + x] < mean * 0.7) n++;
+      row[y] = n; if (n > max) max = n;
+    }
+    if (!max) return null;
+    // Runs of "text rows" (small gaps allowed); pick the run nearest the tap.
+    const on = (y) => row[y] > max * 0.12;
+    const runs = [];
+    for (let y = 0; y < rh; y++) {
+      if (!on(y)) continue;
+      let e = y;
+      while (e + 1 < rh && (on(e + 1) || (e + 2 < rh && on(e + 2)))) e++;
+      runs.push([y, e]);
+      y = e;
+    }
+    const ty = iy - y0;
+    let best = null, bd = Infinity;
+    for (const [a, b] of runs) {
+      if (b - a < 4) continue;
+      const dd = ty < a ? a - ty : ty > b ? ty - b : 0;
+      if (dd < bd) { bd = dd; best = [a, b]; }
+    }
+    if (!best) return null;
+    return { cy: y0 + (best[0] + best[1]) / 2, lh: best[1] - best[0] + 1 };
+  }
+
   async function readAtTap(e) {
     if (!nativeImg || nativeBusy) return;
     nativeBusy = true;
@@ -519,17 +563,32 @@
     await sleep(30);                                // let the message show
     const reads = [];
     const t0 = Date.now();
+    const agreed = () => {
+      const sure = reads.filter((x) => x.inv && x.sure);
+      return sure.some((x) => sure.filter((y) => y.inv === x.inv).length >= 2);
+    };
+    // 1) Crop exactly around the line nearest the finger.
+    const line = locateLine(nativeImg, ix, iy);
+    if (line) {
+      for (const k of [2.6, 2.1, 3.3]) {
+        for (const wf of [0.45, 0.6, 0.35]) {
+          const h = k * line.lh, w = wf * W;
+          const rd = tryRead(cropGray(nativeImg, ix - w / 2, line.cy - h / 2, w, h, 160));
+          if (rd) reads.push(rd);
+        }
+        if (agreed()) break;
+      }
+    }
+    // 2) Otherwise a wider search of sizes and offsets around the tap.
     outer:
-    for (const hf of [0.018, 0.026, 0.038, 0.012, 0.055, 0.08]) {
-      for (const wf of [0.45, 0.35, 0.6, 0.8]) {
-        for (const dy of [0, -0.25, 0.25]) {
+    for (const hf of agreed() ? [] : [0.04, 0.055, 0.03, 0.075, 0.022, 0.016]) {
+      for (const wf of [0.45, 0.6, 0.35]) {
+        for (const dy of [0, -0.3, 0.3]) {
           const h = hf * H, w = wf * W;
           const rd = tryRead(cropGray(nativeImg, ix - w / 2, iy - h / 2 + dy * h, w, h, 160));
           if (rd) reads.push(rd);
-          // Stop early once two confident reads agree, or after ~2.5 s.
-          const sure = reads.filter((x) => x.inv && x.sure);
-          if (sure.length >= 2 && sure.filter((x) => x.inv === sure[0].inv).length >= 2) break outer;
-          if (Date.now() - t0 > 2500) break outer;
+          // Stop early once two confident reads agree, or after ~4 s.
+          if (agreed() || Date.now() - t0 > 4000) break outer;
         }
         await sleep(0);                             // keep the screen responsive
       }
