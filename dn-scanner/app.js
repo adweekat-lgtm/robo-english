@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v4';          // keep in sync with sw.js
+  const VERSION = 'dn-v5';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const LEARN_KEY = 'dn-scanner-learned';
   const LEARN_MAX = 500;
@@ -476,44 +476,74 @@
 
   // Phone's own camera app (sharper on weak phones): take a photo, then tap the DN number.
   let nativeImg = null;
+  // The phone photo is shrunk once (iPhone photos are 12 MP: slow and heavy to read),
+  // kept only in memory while the user taps, then dropped.
+  let nativeBusy = false;
   function openNativePhoto(file) {
+    showResult('idle', '⏳ جاري فتح الصورة…');
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      nativeImg = img;
+      const MAX = 2000;
+      const sc = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      const src = document.createElement('canvas');
+      src.width = Math.round(img.naturalWidth * sc);
+      src.height = Math.round(img.naturalHeight * sc);
+      src.getContext('2d').drawImage(img, 0, 0, src.width, src.height);
+      URL.revokeObjectURL(url);
+      nativeImg = src;
       const cv = $('photoCanvas');
-      const maxW = Math.min(window.innerWidth, 900);
-      const sc = maxW / img.naturalWidth;
-      cv.width = Math.round(img.naturalWidth * sc);
-      cv.height = Math.round(img.naturalHeight * sc);
-      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      const vw = Math.min(window.innerWidth, 900);
+      cv.width = vw;
+      cv.height = Math.round(src.height * vw / src.width);
+      cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+      const hint = $('photoHint');
+      if (hint) hint.textContent = 'المس رقم السند (DN) في الصورة';
+      paused = true;                                // the live camera rests meanwhile
       $('photoView').hidden = false;
+      showResult('idle', 'المس رقم السند في الصورة');
     };
-    img.onerror = () => showResult('err', 'تعذّر فتح الصورة');
+    img.onerror = () => { URL.revokeObjectURL(url); showResult('err', 'تعذّر فتح الصورة'); };
     img.src = url;
   }
-  function readAtTap(e) {
-    if (!nativeImg) return;
+  async function readAtTap(e) {
+    if (!nativeImg || nativeBusy) return;
+    nativeBusy = true;
     const cv = $('photoCanvas');
     const r = cv.getBoundingClientRect();
-    const W = nativeImg.naturalWidth, H = nativeImg.naturalHeight;
+    const W = nativeImg.width, H = nativeImg.height;
     const ix = (e.clientX - r.left) / r.width * W;
     const iy = (e.clientY - r.top) / r.height * H;
+    const hint = $('photoHint');
+    if (hint) hint.textContent = '⏳ جاري القراءة…';
+    await sleep(30);                                // let the message show
     const reads = [];
-    for (const hf of [0.02, 0.03, 0.045, 0.065]) {
-      for (const wf of [0.35, 0.45, 0.6]) {
-        const h = hf * H, w = wf * W;
-        reads.push(tryRead(cropGray(nativeImg, ix - w / 2, iy - h / 2, w, h, 160)));
+    const t0 = Date.now();
+    outer:
+    for (const hf of [0.018, 0.026, 0.038, 0.012, 0.055, 0.08]) {
+      for (const wf of [0.45, 0.35, 0.6, 0.8]) {
+        for (const dy of [0, -0.25, 0.25]) {
+          const h = hf * H, w = wf * W;
+          const rd = tryRead(cropGray(nativeImg, ix - w / 2, iy - h / 2 + dy * h, w, h, 160));
+          if (rd) reads.push(rd);
+          // Stop early once two confident reads agree, or after ~2.5 s.
+          const sure = reads.filter((x) => x.inv && x.sure);
+          if (sure.length >= 2 && sure.filter((x) => x.inv === sure[0].inv).length >= 2) break outer;
+          if (Date.now() - t0 > 2500) break outer;
+        }
+        await sleep(0);                             // keep the screen responsive
       }
     }
+    nativeBusy = false;
     closePhoto();
     unlockAudio();
-    decide(reads.filter(Boolean));
+    decide(reads);
   }
   function closePhoto() {
     $('photoView').hidden = true;
-    if (nativeImg) URL.revokeObjectURL(nativeImg.src);
     nativeImg = null;                               // the photo is not kept
+    paused = false;
+    if ($('btnPause')) $('btnPause').textContent = '⏸';
   }
 
   // Tap on the live picture -> focus there (where the phone supports it).
@@ -551,6 +581,15 @@
   let torchOn = false;
   function setupTrackTools(track) {
     camTrack = track || null;
+    if (track) {
+      const revive = () => {
+        if (!running || track !== camTrack) return;
+        stopCamera();
+        setTimeout(startCamera, 300);
+      };
+      track.addEventListener('ended', revive);
+      track.addEventListener('mute', () => setTimeout(() => { if (track.muted) revive(); }, 1500));
+    }
     if (!track || !track.getCapabilities) return;
     const caps = track.getCapabilities();
     const adv = [];
