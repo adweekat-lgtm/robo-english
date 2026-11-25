@@ -51,6 +51,22 @@
     let mean = 0;
     for (let i = 0; i < data.length; i++) mean += data[i];
     mean /= data.length;
+    // Otsu threshold: print is much darker than paper texture, shadows or the moiré
+    // stripes you get when photographing a screen; only pixels below it can be ink.
+    const hist = new Float64Array(256);
+    for (let i = 0; i < data.length; i++) hist[data[i]]++;
+    let sumAll = 0;
+    for (let v = 0; v < 256; v++) sumAll += v * hist[v];
+    let wB = 0, sumB = 0, best = 0, otsu = 255;
+    for (let v = 0; v < 256; v++) {
+      wB += hist[v]; if (!wB) continue;
+      const wF = data.length - wB; if (!wF) break;
+      sumB += v * hist[v];
+      const mB = sumB / wB, mF = (sumAll - sumB) / wF;
+      const between = wB * wF * (mB - mF) * (mB - mF);
+      if (between > best) { best = between; otsu = v; }
+    }
+    const lim = Math.min(mean * 0.92, otsu + 0.15 * (mean - otsu));
     for (let y = 0; y < h; y++) {
       const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
       for (let x = 0; x < w; x++) {
@@ -58,7 +74,7 @@
         const sum = ii[y1 * (w + 1) + x1] - ii[y0 * (w + 1) + x1] - ii[y1 * (w + 1) + x0] + ii[y0 * (w + 1) + x0];
         const local = sum / ((x1 - x0) * (y1 - y0));
         const v = data[y * w + x];
-        out[y * w + x] = v < local * 0.82 && v < mean * 0.92 ? 1 : 0;
+        out[y * w + x] = v < local * 0.82 && v < lim ? 1 : 0;
       }
     }
     return out;

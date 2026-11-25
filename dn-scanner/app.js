@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v7';          // keep in sync with sw.js
+  const VERSION = 'dn-v8';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const LEARN_KEY = 'dn-scanner-learned';
   const LEARN_MAX = 500;
@@ -413,8 +413,8 @@
       const n = mode(sure.map((r) => r.inv));
       const agree = sure.filter((r) => r.inv === n).length;
       const g = sure.find((r) => r.inv === n).glyphs;
-      // Another number also read with confidence twice or more -> let the user decide.
-      const rival = sure.some((r) => r.inv !== n && sure.filter((x) => x.inv === r.inv).length >= 2);
+      // Another number also read with confidence, and not clearly outvoted -> let the user decide.
+      const rival = sure.some((r) => r.inv !== n && sure.filter((x) => x.inv === r.inv).length * 2 >= agree);
       if (!rival && (agree >= 2 || !state.settings.confirm)) {
         readsByNumber[n] = g;
         lastHit = { n, seen: Date.now() };
@@ -575,7 +575,11 @@
       for (const k of [2.6, 2.1, 3.3]) {
         for (const wf of [0.45, 0.6, 0.35]) {
           const h = k * line.lh, w = wf * W;
-          const rd = tryRead(cropGray(nativeImg, ix - w / 2, line.cy - h / 2, w, h, 160));
+          // Keep the printed line about 50 px tall for the reader (more detail = fewer mistakes).
+          const workH = Math.round(50 * k);
+          const g = cropGray(nativeImg, ix - w / 2, line.cy - h / 2, w, h, Math.max(160, workH));
+          let rd = null;
+          if (g) { try { rd = DNDigits.read(g, templates, invLen(), 1.2, workH); } catch (err) { rd = null; } }
           if (rd) reads.push(rd);
         }
         if (agreed()) break;
@@ -596,6 +600,8 @@
       }
     }
     nativeBusy = false;
+    window.__lastReads = reads.map((x) => x.text + (x.sure ? ' SURE' : ''));   // for diagnosis
+    window.__lastLine = line;
     closePhoto();
     unlockAudio();
     decide(reads);
