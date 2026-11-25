@@ -4,14 +4,14 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v6';          // keep in sync with sw.js
+  const VERSION = 'dn-v7';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const LEARN_KEY = 'dn-scanner-learned';
   const LEARN_MAX = 500;
   const $ = (id) => document.getElementById(id);
 
   // ---------------------------------------------------------------- state
-  const DEFAULTS = { device: '', len: 11, sound: true, confirm: true };
+  const DEFAULTS = { device: '', len: 11, sound: true, confirm: true, zoom: 0 };
   let state = load();
   function load() {
     try {
@@ -272,7 +272,9 @@
     add(n, 'cam');
   }
 
-  async function startCamera() {
+  // quiet = restart in the background without replacing the message on screen
+  async function startCamera(quiet) {
+    quiet = quiet === true;
     unlockAudio();
     const msg = $('camMsg');
     msg.hidden = true;
@@ -285,7 +287,7 @@
       return;
     }
     $('btnStart').hidden = true;
-    showResult('idle', '⏳ جاري تشغيل الكاميرا…');
+    if (!quiet) showResult('idle', '⏳ جاري تشغيل الكاميرا…');
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -313,7 +315,7 @@
     $('btnPause').hidden = false;
     $('btnPause').textContent = '⏸';
     if ($('btnShot')) $('btnShot').hidden = false;
-    showResult('idle', 'ضع سطر رقم السند (DN) داخل الإطار، أو اضغط 📸');
+    if (!quiet) showResult('idle', 'ضع سطر رقم السند (DN) داخل الإطار، أو اضغط 📸');
     requestWakeLock();
     scanLoop();
   }
@@ -603,6 +605,23 @@
     nativeImg = null;                               // the photo is not kept
     paused = false;
     if ($('btnPause')) $('btnPause').textContent = '⏸';
+    resumeAfterNative();
+  }
+  // The phone's camera app cannot focus well while this page still holds the camera,
+  // so the live camera is stopped first and restarted when the user comes back.
+  let resumeLive = false;
+  function openNativeCamera() {
+    const i = $('nativeCam');
+    if (!i) return;
+    resumeLive = running;
+    if (running) stopCamera();
+    showResult('idle', 'صوّر من مسافة 20–30 سم حتى لا تكون الصورة مغبّشة');
+    i.click();
+  }
+  function resumeAfterNative() {
+    if (!resumeLive) return;
+    resumeLive = false;
+    if (!running) startCamera(true);
   }
 
   // Tap on the live picture -> focus there (where the phone supports it).
@@ -631,8 +650,13 @@
   on('confirmYes', 'click', () => onConfirm('yes'));
   on('confirmEdit', 'click', () => onConfirm('edit'));
   on('confirmNo', 'click', () => onConfirm('no'));
-  on('btnNative', 'click', () => { const i = $('nativeCam'); if (i) i.click(); });
-  on('nativeCam', 'change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) openNativePhoto(f); });
+  on('btnNative', 'click', openNativeCamera);
+  on('nativeCam', 'change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) openNativePhoto(f); else resumeAfterNative(); });
+  on('nativeCam', 'cancel', resumeAfterNative);
+  // Older browsers have no 'cancel' event: resume when the page gets focus back without a photo.
+  window.addEventListener('focus', () => setTimeout(() => {
+    if (resumeLive && $('photoView').hidden && !nativeBusy) resumeAfterNative();
+  }, 1500));
   on('photoCanvas', 'click', readAtTap);
   on('photoClose', 'click', closePhoto);
   on('video', 'click', tapFocus);
@@ -644,7 +668,7 @@
       const revive = () => {
         if (!running || track !== camTrack) return;
         stopCamera();
-        setTimeout(startCamera, 300);
+        setTimeout(() => startCamera(true), 300);
       };
       track.addEventListener('ended', revive);
       track.addEventListener('mute', () => setTimeout(() => { if (track.muted) revive(); }, 1500));
@@ -667,9 +691,15 @@
       z.min = caps.zoom.min;
       z.max = Math.min(caps.zoom.max, caps.zoom.min * 5);
       z.step = caps.zoom.step || 0.1;
-      z.value = (track.getSettings && track.getSettings().zoom) || caps.zoom.min;
+      // Phones cannot focus closer than ~15-20 cm: start at x2 so the DN line is big
+      // while the phone stays far enough to be sharp. The user's last choice is remembered.
+      const want = Number(state.settings.zoom) || 2;
+      const zv = Math.min(Number(z.max), Math.max(caps.zoom.min, want));
+      z.value = zv;
+      track.applyConstraints({ advanced: [{ zoom: zv }] }).catch(() => {});
       z.hidden = false;
       z.oninput = () => track.applyConstraints({ advanced: [{ zoom: Number(z.value) }] }).catch(() => {});
+      z.onchange = () => { state.settings.zoom = Number(z.value); save(); };
     }
   }
 
@@ -695,7 +725,7 @@
     }
   });
 
-  $('btnStart').addEventListener('click', startCamera);
+  $('btnStart').addEventListener('click', () => startCamera());
   $('btnPause').addEventListener('click', () => {
     paused = !paused;
     $('btnPause').textContent = paused ? '▶' : '⏸';
