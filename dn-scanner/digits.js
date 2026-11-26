@@ -1,5 +1,5 @@
-/* Recogniser for the dot-matrix Arabic-Indic digits printed on Pepsi delivery notes
- * ("DN١٢٠٢٠٤٠٠٢٠٦"). Pure JS, no libraries, a few ms per frame.
+/* Recogniser for the dot-matrix digits printed on delivery notes, in Arabic-Indic
+ * ("DN١٢٠٢٠٤٠٠٢٠٦") or English ("DN12020400281") form. Pure JS, no libraries, a few ms per frame.
  *
  * Pipeline: gray image -> local threshold -> dilate (joins printer dots) ->
  * connected components -> pick the text line -> one 16x16 feature grid per glyph ->
@@ -252,7 +252,7 @@
     for (const t of templates) {
       const d = dist(f, t.f);
       if (near.length < 12 || d < near[near.length - 1].d) {
-        near.push({ d, l: t.l });
+        near.push({ d, l: t.l, s: t.s || '' });
         near.sort((a, b) => a.d - b.d);
         if (near.length > 12) near.pop();
       }
@@ -266,7 +266,17 @@
     // caught later by the length check).
     const isD = /\d/.test(l);
     const other = near.find((n) => n.l !== l && (!isD || /\d/.test(n.l)));
-    return { l, d: bd, ratio: other ? other.d / (bd + 1e-6) : 9 };
+    return { l, d: bd, ratio: other ? other.d / (bd + 1e-6) : 9, s: near[0].s };
+  }
+
+  // Templates of one script ('a' Arabic-Indic, 'e' English digits) plus the shared ones
+  // (D, N, noise, and learned glyphs without a script). Cached per template array.
+  const byScript = new WeakMap();
+  function scriptSet(templates, sc) {
+    let m = byScript.get(templates);
+    if (!m) { m = {}; byScript.set(templates, m); }
+    if (!m[sc]) m[sc] = templates.filter((t) => !t.s || t.s === sc);
+    return m[sc];
   }
 
   /* Read the text: tries the best few lines and returns the first that contains an
@@ -276,7 +286,13 @@
     const seg = segment(gray, workH);
     let first = null;
     for (const line of seg.lines) {
-      const glyphs = line.glyphs.map((g) => ({ ...g, ...classify(g.f, templates) }));
+      // A DN line is all English or all Arabic-Indic digits, and some shapes exist in both
+      // (English 1 ~ Arabic ٦). Vote the script over the line, then read with that script only.
+      let glyphs = line.glyphs.map((g) => ({ ...g, ...classify(g.f, templates) }));
+      const votes = { a: 0, e: 0 };
+      glyphs.forEach((g) => { if (/\d/.test(g.l) && votes[g.s] !== undefined) votes[g.s]++; });
+      const script = votes.e > votes.a ? 'e' : votes.a > votes.e ? 'a' : '';
+      if (script) glyphs = line.glyphs.map((g) => ({ ...g, ...classify(g.f, scriptSet(templates, script)), script }));
       // A wide gap (e.g. between the number and the Arabic label) ends the number.
       let text = '';
       glyphs.forEach((g, i) => {
@@ -286,7 +302,7 @@
       const inv = invoiceFrom(text, len);
       const digits = glyphs.filter((g) => /\d/.test(g.l));
       const sure = !line.clipped && digits.every((g) => g.ratio >= minRatio);
-      const r = { text, glyphs, inv, sure };
+      const r = { text, glyphs, inv, sure, script };
       if (inv) return r;
       if (!first) first = r;
     }
@@ -307,17 +323,19 @@
   }
 
   // Templates are stored compactly: grid values as 0-9 chars + width/height.
-  function packTemplate(l, f) {
+  function packTemplate(l, f, script) {
     let s = '';
     for (let i = 0; i < G * G; i++) s += Math.min(9, Math.round(f[i] * 9));
-    return [l, s, +f[G * G].toFixed(3), +f[G * G + 1].toFixed(3)];
+    const p = [l, s, +f[G * G].toFixed(3), +f[G * G + 1].toFixed(3)];
+    if (script) p.push(script);
+    return p;
   }
   function unpackTemplate(p) {
     const f = new Float32Array(G * G + 2);
     for (let i = 0; i < G * G; i++) f[i] = (p[1].charCodeAt(i) - 48) / 9;
     f[G * G] = p[2];
     f[G * G + 1] = p[3];
-    return { l: p[0], f };
+    return { l: p[0], f, s: p[4] || '' };
   }
 
   const api = { setOpts: (o) => { if (o.G) G = o.G; if (o.SRC) SRC = o.SRC; }, segment, classify, read, invoiceFrom, packTemplate, unpackTemplate, dist, G };

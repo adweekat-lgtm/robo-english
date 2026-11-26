@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v9';          // keep in sync with sw.js
+  const VERSION = 'dn-v10';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const LEARN_KEY = 'dn-scanner-learned';
   const LEARN_MAX = 500;
@@ -175,7 +175,7 @@
       else if (all.length === number.length) g = all;
       else return false;
     }
-    g.forEach((x, i) => learned.push(DNDigits.packTemplate(number[i], x.f)));
+    g.forEach((x, i) => learned.push(DNDigits.packTemplate(number[i], x.f, x.script)));
     if (learned.length > LEARN_MAX) learned = learned.slice(-LEARN_MAX);
     try { localStorage.setItem(LEARN_KEY, JSON.stringify(learned)); } catch (e) { /* full */ }
     loadTemplates();
