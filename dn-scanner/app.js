@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  const VERSION = 'dn-v10';          // keep in sync with sw.js
+  const VERSION = 'dn-v11';          // keep in sync with sw.js
   const KEY = 'dn-scanner-v1';
   const LEARN_KEY = 'dn-scanner-learned';
   const LEARN_MAX = 500;
@@ -241,11 +241,15 @@
   const readsByNumber = {};   // number -> glyphs it was read from (to learn from corrections)
 
   async function scanLoop() {
+    let tick = 0;
     while (running) {
       if (!paused && $('video').readyState >= 2) {
-        const g = grab();
+        // Every other frame read a 4x taller band around the frame, so a DN line that
+        // sits above or below the frame is still found.
+        const grow = tick++ % 2 ? 4 : 1;
+        const g = grab(grow);
         if (g) {
-          try { handleRead(DNDigits.read(g, templates, Number(state.settings.len) || 0)); } catch (e) { /* skip frame */ }
+          try { handleRead(DNDigits.read(g, templates, Number(state.settings.len) || 0, 1.2, 96 * grow)); } catch (e) { /* skip frame */ }
         }
       }
       await new Promise((r) => setTimeout(r, 30));
@@ -260,7 +264,7 @@
     const n = r.inv && r.sure ? r.inv : null;
     const now = Date.now();
     recent.push(n);
-    if (recent.length > 3) recent.shift();
+    if (recent.length > 4) recent.shift();
     if (!n) return;
     // Same note still in front of the camera -> ignore until it is moved away.
     if (n === lastHit.n && now - lastHit.seen < 1800) { lastHit.seen = now; return; }
@@ -273,8 +277,15 @@
   }
 
   // quiet = restart in the background without replacing the message on screen
+  let starting = false;
   async function startCamera(quiet) {
     quiet = quiet === true;
+    if (starting || running) return;            // never open the camera twice
+    starting = true;
+    try { await startCameraInner(quiet); } finally { starting = false; }
+  }
+
+  async function startCameraInner(quiet) {
     unlockAudio();
     const msg = $('camMsg');
     msg.hidden = true;
@@ -288,21 +299,33 @@
     }
     $('btnStart').hidden = true;
     if (!quiet) showResult('idle', '⏳ جاري تشغيل الكاميرا…');
+    // If the phone is waiting for camera permission, say so (iPhone home-screen apps
+    // often ask every time they open).
+    const hint = setTimeout(() => {
+      if (!quiet) showResult('idle', '⏳ جاري تشغيل الكاميرا…<small>إذا ظهرت رسالة السماح بالكاميرا اضغط «سماح» (Allow)</small>');
+    }, 2500);
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      });
+      stream = await Promise.race([
+        navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        }),
+        sleep(15000).then(() => { const e = new Error('timeout'); e.name = 'TimeoutError'; throw e; }),
+      ]);
     } catch (e) {
+      clearTimeout(hint);
       $('btnStart').hidden = false;
       if (e && e.name === 'NotAllowedError') camError('لم يُسمح باستخدام الكاميرا. اسمح بها من إعدادات المتصفح ثم أعد المحاولة.');
       else if (e && e.name === 'NotFoundError') camError('لم يتم العثور على كاميرا في هذا الجهاز.');
+      else if (e && e.name === 'TimeoutError') camError('الكاميرا لم تستجب. اضغط ▶ تشغيل الكاميرا مرة ثانية، أو أغلق التطبيق وافتحه.');
       else camError('تعذّر تشغيل الكاميرا: ' + ((e && e.message) || e));
       return;
     }
+    clearTimeout(hint);
     const video = $('video');
     video.srcObject = stream;
-    try { await video.play(); } catch (e) { /* autoplay muted is allowed */ }
+    // play() can take long on iPhone; the picture appears by itself, so don't wait for it.
+    try { await Promise.race([video.play(), sleep(1500)]); } catch (e) { /* autoplay muted is allowed */ }
     setupTrackTools(stream.getVideoTracks()[0]);
     if (!window.DNDigits || !templates.length) {
       camError('تعذّر تجهيز قارئ الأرقام. أغلق التطبيق وافتحه مرة ثانية مع الإنترنت.');
@@ -385,7 +408,7 @@
           const video = $('video');
           const n = frameNorm();
           if (n) {
-            for (const g of [1, 2]) {
+            for (const g of [1, 2, 4]) {
               const r = photoRegion(bmp.width, bmp.height, video.videoWidth / video.videoHeight, n, g);
               reads.push(tryRead(cropGray(bmp, r[0], r[1], r[2], r[3], Math.round(160 * g)), g));
             }
@@ -395,7 +418,7 @@
       }
       // 2) A short burst of video frames.
       for (let i = 0; i < 6; i++) {
-        reads.push(tryRead(grab(1)), tryRead(grab(2), 2));
+        reads.push(tryRead(grab(1)), tryRead(grab(2), 2), tryRead(grab(4), 4));
         await sleep(70);
       }
     } finally {
@@ -679,7 +702,10 @@
         setTimeout(() => startCamera(true), 300);
       };
       track.addEventListener('ended', revive);
-      track.addEventListener('mute', () => setTimeout(() => { if (track.muted) revive(); }, 1500));
+      const born = Date.now();
+      track.addEventListener('mute', () => setTimeout(() => {
+        if (track.muted && Date.now() - born > 5000) revive();
+      }, 3000));
     }
     if (!track || !track.getCapabilities) return;
     const caps = track.getCapabilities();
@@ -845,6 +871,15 @@
 
   render();
   loadTemplates();
+
+  // Camera already allowed for this app -> start it straight away (saves a tap).
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'camera' }).then((p) => {
+        if (p.state === 'granted' && !document.hidden) startCamera();
+      }).catch(() => {});
+    }
+  } catch (e) { /* not supported */ }
 
   window.__dn = { decide, takeShot, askConfirm, extract, add, state: () => state, grab, handleRead, learned: () => learned.length, templates: () => templates.length };
 })();

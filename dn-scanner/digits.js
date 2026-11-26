@@ -162,7 +162,7 @@
     }
     const score = (L) => L.items.length - 3 * Math.abs((L.y0 + L.y1) / 2 - h / 2) / h; // prefer centre
     lines.sort((a, b) => score(b) - score(a));
-    const out = lines.filter((L) => L.items.length >= 3).slice(0, 3).map((L) => lineGlyphs(L.items, ink, dil, w, h));
+    const out = lines.filter((L) => L.items.length >= 3).slice(0, 5).map((L) => lineGlyphs(L.items, ink, dil, w, h));
     return { lines: out, glyphs: out.length ? out[0].glyphs : [], img, dil };
   }
 
@@ -239,6 +239,18 @@
   }
 
   // ------------------------------------------------------------------ classification
+  function distBound(a, b, bound) {
+    const dw = a[G * G] - b[G * G], dh = a[G * G + 1] - b[G * G + 1];
+    let d = 12 * (dw * dw + dh * dh);
+    if (d >= bound) return d;
+    const n = G * G;
+    for (let i = 0; i < n; i += 16) {
+      for (let j = i; j < i + 16; j++) { const t = a[j] - b[j]; d += t * t; }
+      if (d >= bound) return d;
+    }
+    return d;
+  }
+
   function dist(a, b) {
     let d = 0;
     for (let i = 0; i < G * G; i++) { const t = a[i] - b[i]; d += t * t; }
@@ -250,7 +262,9 @@
   function classify(f, templates, k = 3) {
     const near = [];
     for (const t of templates) {
-      const d = dist(f, t.f);
+      // Stop summing as soon as this template can no longer enter the 12 nearest.
+      const bound = near.length < 12 ? Infinity : near[near.length - 1].d;
+      const d = distBound(f, t.f, bound);
       if (near.length < 12 || d < near[near.length - 1].d) {
         near.push({ d, l: t.l, s: t.s || '' });
         near.sort((a, b) => a.d - b.d);
