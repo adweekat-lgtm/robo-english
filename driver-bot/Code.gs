@@ -429,8 +429,16 @@ function setup() {
   const def = ss.getSheetByName('Sheet1') || ss.getSheetByName('الورقة1') || ss.getSheetByName('ورقة1');
   if (def && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
 
-  if (!PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY')) promptApiKey();
-  else SpreadsheetApp.getUi().alert('✅ تم إعداد الأوراق.');
+  // عند التشغيل من محرر Apps Script (مثلاً من الجوال) لا توجد نوافذ: نكتب النتيجة في السجل فقط
+  let ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
+  const hasKey = !!PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!ui) {
+    console.log('✅ تم إعداد الأوراق.' + (hasKey ? '' : ' أضف المفتاح: إعدادات المشروع ⚙️ ← Script properties ← GEMINI_API_KEY'));
+    return;
+  }
+  if (!hasKey) promptApiKey();
+  else ui.alert('✅ تم إعداد الأوراق.');
 }
 
 function promptApiKey() {

@@ -37,6 +37,9 @@ driver-bot/
    ستجد الأوراق: `Trucks` و`Readings` و`Knowledge` و`Questions` و`Settings`.
 7. جرّب **🚚 ← 3) تجربة سؤال**. إذا جاء جواب فالمساعد يعمل.
 
+> **📱 من الجوال:** افتح Chrome أو Safari (وليس تطبيق Sheets) وفعّل «موقع سطح المكتب». في محرر Apps Script اختر الدالة `setup` واضغط ▶ Run،
+> ثم أضف المفتاح من ⚙️ Project Settings ← Script properties ← `GEMINI_API_KEY`.
+
 ### 3) النشر كتطبيق ويب
 1. في محرر Apps Script: **Deploy ← New deployment** (نشر ← نشر جديد).
 2. ⚙️ النوع: **Web app**.
