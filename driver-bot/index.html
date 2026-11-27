@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f2a4a">
+  <title>مساعد السائق</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span aria-hidden="true">🚚</span> <span id="appName">مساعد السائق</span></div>
+    <div class="top-actions">
+      <span id="truckBadge" class="badge" hidden></span>
+      <button id="langBtn" class="ghost" type="button">🌐</button>
+      <button id="logoutBtn" class="ghost" type="button" hidden>🚪</button>
+    </div>
+  </header>
+
+  <div id="demoBanner" class="demo" hidden></div>
+
+  <main id="app">
+    <!-- اختيار اللغة -->
+    <section id="langScreen" class="screen" hidden>
+      <h1 class="center">🌐</h1>
+      <div class="lang-list">
+        <button class="big" data-lang="ar" type="button" lang="ar" dir="rtl">العربية</button>
+        <button class="big" data-lang="en" type="button" lang="en" dir="ltr">English</button>
+        <button class="big" data-lang="ur" type="button" lang="ur" dir="rtl">اردو</button>
+      </div>
+    </section>
+
+    <!-- الدخول -->
+    <section id="loginScreen" class="screen" hidden>
+      <form id="loginForm" class="card" autocomplete="on">
+        <label><span data-t="truckNo"></span>
+          <input id="truckInput" name="truck" inputmode="text" autocapitalize="characters" autocomplete="username" required dir="ltr">
+        </label>
+        <label><span data-t="pin"></span>
+          <input id="pinInput" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required dir="ltr">
+        </label>
+        <button class="big primary" type="submit" data-t="login"></button>
+        <p id="loginMsg" class="msg" role="alert"></p>
+        <p id="demoHint" class="hint" hidden></p>
+      </form>
+    </section>
+
+    <!-- الشاشة الرئيسية -->
+    <section id="homeScreen" class="screen" hidden>
+      <div id="statusCard" class="card status">
+        <div class="km-label" data-t="odometer"></div>
+        <div class="km"><bdi dir="ltr" id="kmValue">—</bdi> <span data-t="km"></span></div>
+        <div class="bar" aria-hidden="true"><div id="barFill"></div></div>
+        <p id="oilLine" class="oil-line"></p>
+        <p id="oilSub" class="sub"></p>
+        <div class="row">
+          <button id="readingBtn" class="big primary" type="button" data-t="updateKm"></button>
+          <button id="oilBtn" class="big" type="button" data-t="oilChanged"></button>
+        </div>
+      </div>
+
+      <div class="card chat">
+        <h2 data-t="askTitle"></h2>
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div id="chips" class="chips"></div>
+        <form id="askForm" class="ask">
+          <textarea id="askInput" rows="1" maxlength="1000"></textarea>
+          <button id="micBtn" class="icon" type="button" hidden>🎤</button>
+          <button id="sendBtn" class="icon primary" type="submit">➤</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- نافذة إدخال العداد -->
+  <div id="kmDialog" class="overlay" hidden>
+    <form id="kmForm" class="card dialog">
+      <p id="kmTitle" class="dialog-title"></p>
+      <input id="kmInput" inputmode="numeric" pattern="[0-9٠-٩۰-۹,]*" dir="ltr" autocomplete="off" required>
+      <p id="kmMsg" class="msg" role="alert"></p>
+      <div class="row">
+        <button class="big primary" type="submit" data-t="save"></button>
+        <button id="kmCancel" class="big" type="button" data-t="cancel"></button>
+      </div>
+    </form>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
